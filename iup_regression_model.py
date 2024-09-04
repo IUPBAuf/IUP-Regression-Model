@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 
@@ -152,12 +153,12 @@ class VariableWindow(QtWidgets.QDialog):
 class AppWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        uic.loadUi('main.ui', self)
+        uic.loadUi(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.ui'), self)
         self.setWindowTitle("IUP Regression Model")
         self.setWindowIcon(QIcon('iupLogo.png'))
 
         # Loading default data and proxies
-        self.ini = load_config_ini('config folder/config.ini')
+        self.ini = load_config_ini(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config folder/config.ini'))
         self.list_of_data = []
         if 'data_path' in self.ini:
             try:
@@ -679,7 +680,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def load_presets(self):
         self.preset_list = ['-None-']
-        for file in os.listdir('./config folder'):
+        for file in os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config folder')):
             if file.endswith('.ini'):
                 self.preset_list.append(file.split('.')[0])
         self.preset_combo.clear()
@@ -1139,7 +1140,7 @@ def load_default_proxies(ini):
     # NEEDS TO BE MORE FLEXIBLE
     format = '%Y%m'
 
-    proxy_raw = pd.read_csv(path, sep='\s+', index_col=0)
+    proxy_raw = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), sep='\s+', index_col=0)
     proxy_raw.dropna(axis=1, how='all', inplace=True)
     proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
     proxy_raw = proxy_raw.drop('Month', axis=1)
@@ -1151,7 +1152,7 @@ def load_default_proxies(ini):
     path = ini['aod_path']
     aod = Proxy('AOD')
 
-    aod_data = np.genfromtxt(path, skip_header=1)
+    aod_data = np.genfromtxt(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), skip_header=1)
     try:
         aod.time = pd.Series([dt.datetime.strptime(str(int(date)), format).date() for date in aod_data[:, 0]])     # str(int(date)) is not perfect and should be improved upon
         aod.time = aod.time.apply(lambda dt: dt.replace(day=15))
@@ -1944,7 +1945,14 @@ def iup_reg_model(data, proxies, ini):
 # trends, signi, diagnostic = iup_reg_model(data, proxies, ini)
 
 def iup_ui(ui=False):
-    if ui == False:
+
+    parser = argparse.ArgumentParser(description="The IUP Regression Model can compute trends from different .netCDF ozone files with a range of default proxies aswell as the option to include additional proxies.")
+    parser.add_argument('-u', '--ui', action='store_true', help='The IUP Regression Model will run with its user interface.')
+    args = parser.parse_args()
+    if args.ui:
+        ui = True
+
+    if not ui:
         ini = load_config_ini('config folder/config.ini')
         data = load_netCDF(ini['data_path'], ini)
         proxies = load_default_proxies(ini)
@@ -1958,4 +1966,5 @@ def iup_ui(ui=False):
         sys.exit(app.exec())
 
 
-iup_ui(ui=True)
+if __name__ == "__main__":
+    iup_ui()

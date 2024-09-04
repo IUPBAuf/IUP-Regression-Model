@@ -1967,4 +1967,4 @@ def iup_ui(ui=False):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

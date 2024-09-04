@@ -1,4 +1,11 @@
+<<<<<<< HEAD
 /__pycache__
 /test_files
 /old versions
 /Additional Test Proxies
+=======
+__pycache__
+test_files
+old versions
+Additional Test Proxies
+>>>>>>> parent of 121e83b (Update .gitignore)

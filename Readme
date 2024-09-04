@@ -1,0 +1,33 @@
+IUP Regression Model Readme
+Author: Brian Auffarth
+
+There are two ways to use the IRM (IUP Regression Model). Either you use the user interface through the command "iup_ui()" or just with the config.ini file.
+
+Creating trends with the user interface:
+1. Run the "iup_ui()" command
+2. In the interface go to "File" and choose "Load Data" to load a netCDF file with the ozone data.
+    2.1 If the netCDF files include variables of very specific names or the program can't load the data properly, go to "Settings" -> "Load Settings" and change the variable names to the ones in your netCDF file
+    2.2 You can check your loaded data in the Diagnostic tab.
+3. For additional proxy data, go to "File" and choose "Load Proxy File".
+    3.1 Proxy data can also be checked in the diagnostic tab under "Proxies"
+4. Choose which proxies to use and what kind of method should be used for them under in the "Options" tab.
+5. Enable or disable an inflection point and put in a date for the inflection point.
+    5.1 A green checkmark will show up if the date is in a recongnized format.
+6. Hit the "Compute" button on the bottom of the interface and wait for it to finish.
+7. You can now plot the data in the "Plotting" tab to see if everything looks good.
+8. Go to "File" -> "Save" and save the computed trend as netCDF.
+
+Creating trends with the config.ini:
+1. Open the "config.ini" file
+2. Change the settings for your trends
+3. In Python use the command "ini = load_config_ini('config.ini')" to load the config.ini.
+    3.1 Change the path of the .ini to the correct one on your system
+4. Load your data with this command "data = load_data(ini, lat=None, lon=None, alt=None, time=None, atmo_parameter=None, name="My Data")"
+    4.1 Replace "None" with your dimensions and variables
+5. Load proxies "proxies = load_default_proxies(ini)"
+    5.1 Load additional proxies that were specified in the confi.ini "proxies = load_additional_proxies(proxies, ini)"
+    5.2 You can check your proxies by using "proxies[x].name" and "proxies[x].method", where x is an integer that defines the proxy order.
+        5.2.1 You can change the method how each proxy will be used. For example "proxies[0].method = 0" disables the first proxy.
+        5.2.2 The following 4 methods are implemented: 0 = disabled; 1 = singular; 2 = harmonically; 3 = month of the year
+6. Compute the trends with all previous done changes with "trends, signi = iup_reg_model(data, proxies, ini)"
+    6.1 This function gives out the coefficients for the trend and the significance

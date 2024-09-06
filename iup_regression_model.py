@@ -1031,8 +1031,8 @@ def get_proxy_time_overlap(ini, proxies, data):
         date_end = new_data.time[-1]
 
     for i in new_proxies:
-        if date_end > np.array(i.time)[-1]:
-            date_end = np.array(i.time)[-1]
+        if date_end > np.array(i.time)[-1] and i.method != 0:
+            date_end = np.array(i.time)[np.max(np.where(np.in1d(np.array(i.time), new_data.time))[0])]
 
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
@@ -1560,7 +1560,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
             try:
                 lat = data.lat[it.multi_index[ind]]
             except:
-                lat =data.lat[it.multi_index]
+                lat = data.lat[it.multi_index]
             ind += 1
         elif i == 'lon' and data.lon is not None:
             try:
@@ -1579,6 +1579,8 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
 
     # Setting columns as NaNs if they don't fall inbetween the min and max lat and alt specifications of the proxy
     for i in proxies:
+        if i.method == 0:
+            continue
         if not is_between(lat, i.lat_min, i.lat_max) or not is_between(alt, i.alt_min, i.alt_max):
             if i.method == 1:
                 X_2[:, col] = np.nan
@@ -1799,7 +1801,7 @@ def iup_reg_model(data, proxies, ini):
         X_all = np.empty(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
-                if len(np.nonzero(i.data[np.where(time.year == ii)])[0]) / 10 <= float(ini.get('skip_percentage', 0.75)):
+                if len(np.nonzero(i.data[np.where(time.year == ii)])[0]) / len(np.where(time.year == ii)[0]) <= float(ini.get('skip_percentage', 0.75)):
                     i.data[kk] = np.nan
                     continue
                 i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)])
@@ -1844,7 +1846,7 @@ def iup_reg_model(data, proxies, ini):
                     data_arr[time.month == k + 1] = (data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))) / np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
         elif check == 1:
             for k, i in enumerate(np.unique(time.year)):
-                if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / 10 <= float(ini.get('skip_percentage', 0.75)):
+                if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / len(np.where(time.year == i)[0]) <= float(ini.get('skip_percentage', 0.75)):
                     data_arr[k] = np.nan
                     continue
                 data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)])
@@ -1876,8 +1878,7 @@ def iup_reg_model(data, proxies, ini):
         mask_time = np.where(nanmask == True)[0]
 
         # Inquery if there are enough datapoints to even calculate a trend
-        # if len(mask_time) < 10 or mask_time[-1] < 125 or mask_time[0] >= 120:  # no trend is computed if the timeseries doesn't cover the entire series
-        if len(mask_time) / len(nanmask) < 0.75:
+        if len(mask_time) / len(nanmask) < float(ini.get('skip_percentage', 0.75)):
             print('Not long enough')
             it.iternext()
             continue

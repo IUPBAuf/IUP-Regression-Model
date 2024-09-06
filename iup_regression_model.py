@@ -227,6 +227,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.menu_load_proxy.triggered.connect(self.open_proxy_dialog)
         self.menu_save.triggered.connect(self.save_file)
 
+        self.trend_seas_combo.setCurrentIndex(int(self.ini.get('trend_seasonal_component', self.ini.get('default_seasonal_component', 2))) - 1)
+        self.intercept_seas_combo.setCurrentIndex(int(self.ini.get('intercept_seasonal_component', self.ini.get('default_seasonal_component', 2))) - 1)
+
         # Load ini settings and input the data into the UI
         self.load_ini_settings()
 
@@ -462,7 +465,7 @@ class AppWindow(QtWidgets.QMainWindow):
             seasBox = ComboSeasonal(self)
             self.proxy_list.setCellWidget(k, 2, seasBox)
             seasBox.currentIndexChanged.connect(lambda index, seasBox=seasBox, row=k: self.seas_update(seasBox, row))
-            seasBox.setCurrentIndex(i.seas_comp)
+            seasBox.setCurrentIndex(i.seas_comp - 1)
             if self.proxy_list.cellWidget(k, 1).currentIndex() != 2:
                 seasBox.setDisabled(True)
         self.proxy_list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -639,10 +642,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + ', '.join(string) + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
             else:
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + 'all' + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
-
-    def update_seas_term(self):
-        print('leer')
-        # self.ini['number_of_seasonal_terms'] = int(self.seas_term_line.text())
 
     def method_update(self, methodBox, row):
         self.proxies[row].method = int(methodBox.currentIndex())

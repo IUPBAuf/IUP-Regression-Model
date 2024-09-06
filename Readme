@@ -1,6 +1,8 @@
 IUP Regression Model Readme
 Author: Brian Auffarth
 
+1. pip install -r requirements.txt
+
 There are two ways to use the IRM (IUP Regression Model). Either you use the user interface through the command "iup_ui()" or just with the config.ini file.
 
 Creating trends with the user interface:

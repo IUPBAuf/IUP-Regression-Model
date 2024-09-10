@@ -410,7 +410,7 @@
                   <widget class="QComboBox" name="intercept_method_combo">
                    <item>
                     <property name="text">
-                     <string>disable</string>
+                     <string>disabled</string>
                     </property>
                    </item>
                    <item>
@@ -441,7 +441,7 @@
                   <widget class="QComboBox" name="trend_method_combo">
                    <item>
                     <property name="text">
-                     <string>disable</string>
+                     <string>disabled</string>
                     </property>
                    </item>
                    <item>
@@ -475,22 +475,22 @@
                    </property>
                    <item>
                     <property name="text">
-                     <string>annual</string>
+                     <string>annual (2 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>semi-annual</string>
+                     <string>semi-annual (4 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>tri-annual</string>
+                     <string>tri-annual (6 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>quarter-annual</string>
+                     <string>quarter-annual (8 terms)</string>
                     </property>
                    </item>
                   </widget>
@@ -502,22 +502,22 @@
                    </property>
                    <item>
                     <property name="text">
-                     <string>annual</string>
+                     <string>annual (2 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>semi-annual</string>
+                     <string>semi-annual (4 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>tri-annual</string>
+                     <string>tri-annual (6 terms)</string>
                     </property>
                    </item>
                    <item>
                     <property name="text">
-                     <string>quarter-annual</string>
+                     <string>quarter-annual (8 terms)</string>
                     </property>
                    </item>
                   </widget>

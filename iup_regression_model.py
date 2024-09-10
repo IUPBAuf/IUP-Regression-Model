@@ -65,13 +65,13 @@ class Dataset:
 class ComboMethod(QtWidgets.QComboBox):
     def __init__(self, parent):
         super().__init__(parent)
-        self.addItems(['disable', 'single', 'harmonics', '12 months'])
+        self.addItems(['disabled', 'single', 'harmonics', '12 months'])
 
 
 class ComboSeasonal(QtWidgets.QComboBox):
     def __init__(self, parent):
         super().__init__(parent)
-        self.addItems(['annual', 'semi-annual', 'tri-annual', 'quarter-annual'])
+        self.addItems(['annual (2 terms)', 'semi-annual (4 terms)', 'tri-annual (6 terms)', 'quarter-annual (8 terms)'])
 
 
 # Empty "canvas" for plotting
@@ -550,8 +550,12 @@ class AppWindow(QtWidgets.QMainWindow):
         else:
             dim_num = len(self.trends.shape)
 
-        for k in range(dim_num):
-            self.dim_combo.addItem(data.dim_array[1:][k])
+        if len(data.o3.shape) == 1:
+            self.dim_combo.setDisabled(True)
+        else:
+            self.dim_combo.setDisabled(False)
+            for k in range(dim_num):
+                self.dim_combo.addItem(data.dim_array[1:][k])
 
         self.plot_indices = self.plot_indices[:dim_num]
 
@@ -829,7 +833,9 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Preparing Plot values
         data = self.current_data
+        print(self.plot_indices)
         indices = tuple([slice(None)] + list(self.plot_indices))
+        print(indices)
 
         X = data.time
         Y = data.o3[indices]
@@ -1741,7 +1747,7 @@ def calc_trend(X, data_arr, ini, X_string):
                 print('NOT YET FINISHED')
             else:
                 siga_z = np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])))
-                if ini.get('o3_var_unit').split('_')[0] == 'anom':
+                if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
                     trenda_z = np.nanmean(betaa[trend_string_index]) * 120
                 else:
                     trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr)

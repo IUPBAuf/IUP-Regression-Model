@@ -970,7 +970,6 @@ def proxies_to_class(proxy_raw):
     for count, proxy in enumerate(proxy_raw):
         proxy_list.append(Proxy(proxy))
         proxy_list[count].time = pd.to_datetime(pd.Series(proxy_raw.index)).dt.date.map(lambda t: t.replace(day=15))
-        # proxy_list[count].time = proxy_list[count].time.to_pydatetime()
         proxy_list[count].data = proxy_array[:, count]
 
     return proxy_list
@@ -1043,14 +1042,14 @@ def get_proxy_time_overlap(ini, proxies, data):
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
 
-    for k, i in enumerate(new_proxies):
-        if 'Nino' in i.name or 'ENSO' in i.name:
-            # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
-            enso_lag = -2
-            enso = get_enso_lag(i, enso_lag, date_start, date_end)
-            new_proxies[k].data = enso.data
-        else:
-            new_proxies[k].data = i.data[(i.time >= date_start.replace(day=15)) & (i.time <= date_end.replace(day=15))]
+    # for k, i in enumerate(new_proxies):
+    #     if 'Nino' in i.name or 'ENSO' in i.name:
+    #         # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
+    #         enso_lag = -2
+    #         enso = get_enso_lag(i, enso_lag, date_start, date_end)
+    #         new_proxies[k].data = enso.data
+    #     else:
+    #         new_proxies[k].data = i.data[(i.time >= date_start.replace(day=15)) & (i.time <= date_end.replace(day=15))]
 
     return new_data, new_proxies
 
@@ -1171,9 +1170,8 @@ def load_default_proxies(ini):
     # Add the AOD data to the proxy list
     proxy_list.append(aod)
 
-    if 'default_proxy_limit' in ini:
-        if int(ini['default_proxy_limit']) == 1:
-            proxy_list = default_boundary_settings(proxy_list)
+    if int(ini.get('default_proxy_limit', 0)) == 1:
+        proxy_list = default_boundary_settings(proxy_list)
 
     for i in proxy_list:
         i.method = int(ini.get('default_proxy_method', 2))
@@ -1660,7 +1658,7 @@ def calc_trend(X, data_arr, ini, X_string):
     trend_index = trend_string_index[0]     # To get the first trend index so that the autoregression works
 
     try:
-        beta = np.matmul(np.matmul(np.linalg.inv(np.matmul(np.transpose(X), X)), np.transpose(X)), data_arr[nanmask])
+        beta = np.linalg.inv(X.T @ X) @ X.T @ data_arr[nanmask]
     except:
         print('Calculation failed: NaNs')
         return np.nan, np.nan, np.nan, np.nan, np.nan
@@ -1700,7 +1698,7 @@ def calc_trend(X, data_arr, ini, X_string):
     Xstar = np.matmul(P, X)
     Ystar = np.matmul(P, data_arr[nanmask])
     try:
-        betaa = np.matmul(np.matmul(np.linalg.inv(np.matmul(np.transpose(Xstar), Xstar)), np.transpose(Xstar)), Ystar)
+        betaa = np.linalg.inv(Xstar.T @ Xstar) @ Xstar.T @ Ystar
         covbetaa = np.var(epsilon) * (np.linalg.inv(np.matmul(np.transpose(Xstar), Xstar)))
     except:
         print('Two or more proxies are dependent to each other. A linear regression is not possible. Please either turn of linear regression or turn off one of the proxies.')

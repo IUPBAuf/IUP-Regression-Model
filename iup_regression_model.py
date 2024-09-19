@@ -1173,9 +1173,10 @@ def load_default_proxies(ini):
     if int(ini.get('default_proxy_limit', 0)) == 1:
         proxy_list = default_boundary_settings(proxy_list)
 
-    for i in proxy_list:
+    for k, i in enumerate(proxy_list):
         i.method = int(ini.get('default_proxy_method', 2))
         i.seas_comp = int(ini.get('default_seasonal_component', 3))
+        i.source = [ini['proxy_path'], int(2 + k)]
 
     return proxy_list
 
@@ -1198,6 +1199,7 @@ def load_proxy_file(fileName, ini, proxy_col=None):
         proxy.data = np.array(proxy_raw)[:, proxy_col]
     else:
         proxy.data = np.array(proxy_raw)[:, 0]
+    proxy.source = [fileName, proxy_col]
 
     return proxy
 
@@ -1226,6 +1228,7 @@ def load_additional_proxies(proxies, ini):
         else:
             add_proxies[k].time = pd.Series(proxy_data.index).apply(lambda dt: dt.replace(day=15))
         add_proxies[k].method = ini['additional_proxy_method'][k]
+        add_proxies[k].source = [i, int(ini['additional_proxy_data_col'][k])-1]
 
     proxies = proxies + add_proxies
 
@@ -1603,7 +1606,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
         # Get the correct proxy data depending on latitude
         if len(i.data.shape) > 1:
             if lat in i.lat:
-                proxy_data = i.data[nanmask, np.where(i.lat == lat)]
+                proxy_data = i.data[data.date_start:data.date_end][nanmask, np.where(i.lat == lat)]
             else:
                 closest_lat = sorted([(lat_close, abs(lat_close - lat)) for lat_close in i.lat], key=lambda x: x[1:])[:2]
                 lat1, lat2 = closest_lat[0][0], closest_lat[1][0]
@@ -1613,7 +1616,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
                     temp_data[kk] = np.interp(lat, [lat1, lat2], [data1[kk], data2[kk]])
                 proxy_data = temp_data
         else:
-            proxy_data = i.data[nanmask]
+            proxy_data = i.data[data.date_start:data.date_end][nanmask]
         if i.method == 0:
             continue
         elif i.method == 1:
@@ -1905,7 +1908,7 @@ def iup_reg_model(data, proxies, ini):
         X_clean[np.isnan(X_clean)] = 0
 
         # Normalize
-        X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
+        # X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
 
         # Calculation of the trends and uncertainties for each cell
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)])
@@ -1950,6 +1953,7 @@ def iup_reg_model(data, proxies, ini):
 
 def iup_ui(ui=False):
 
+    # Console Arguments
     parser = argparse.ArgumentParser(description="The IUP Regression Model can compute trends from different .netCDF ozone files with a range of default proxies aswell as the option to include additional proxies.")
     parser.add_argument('-u', '--ui', action='store_true', help='The IUP Regression Model will run with its user interface.')
     args = parser.parse_args()

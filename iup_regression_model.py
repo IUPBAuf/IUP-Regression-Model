@@ -1040,7 +1040,11 @@ def get_proxy_time_overlap(ini, proxies, data):
             date_end = np.array(i.time)[np.max(np.where(np.in1d(np.array(i.time), new_data.time))[0])]
 
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
-    new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
+    new_data.date_end = np.where(new_data.time == date_end)[0][0]
+
+    for i in new_proxies:
+        i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
+        i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
 
     # for k, i in enumerate(new_proxies):
     #     if 'Nino' in i.name or 'ENSO' in i.name:
@@ -1466,7 +1470,7 @@ def default_boundary_settings(proxy_list):
     return proxy_list
 
 
-def get_X_1(inflection_index, nanmask, ini, X_1_string, data):
+def get_X_1(nanmask, ini, X_1_string, data):
     mask_time = np.where(nanmask == True)[0]  # Array which has every index of actual values of the original data
 
     if 'inflection_method' not in ini:
@@ -1479,6 +1483,8 @@ def get_X_1(inflection_index, nanmask, ini, X_1_string, data):
         raise Exception('The inflection method in the config.ini file is not being recognized. Either use "pwl" for piece-wise linear trends or "ind" for independent trends. If none of these should be used, please delete the inflection method line or comment it out with "#".')
 
     X_1 = np.zeros((len(nanmask), len(X_1_string)), dtype=float)
+
+    # MULTIPLE INFLECTION POINTS ARE NOT YET SUPPORTED! THE PROGRAM WILL ALWAYS USE THE FIRST INFLECTION POINT
 
     col = 0
     first_part = True
@@ -1495,9 +1501,9 @@ def get_X_1(inflection_index, nanmask, ini, X_1_string, data):
                 val = 1
             elif ini['inflection_method'] == 'ind':
                 if first_part == True:  # UGLY, needs fixing
-                    val[:inflection_index] = 1
+                    val[:data.inflection_index[0]] = 1
                 else:
-                    val[inflection_index:] = 1
+                    val[data.inflection_index[0]:] = 1
 
         else:      # Rules for trend column
             seas_comp = int(ini.get('trend_seasonal_component', ini.get('default_seasonal_component', 2)))
@@ -1509,13 +1515,13 @@ def get_X_1(inflection_index, nanmask, ini, X_1_string, data):
                     val = np.arange(1, len(nanmask)+1)
                     first_part = False
                 else:
-                    val[inflection_index:] = np.arange(1, len(nanmask)-inflection_index+1)
+                    val[data.inflection_index[0]:] = np.arange(1, len(nanmask)-data.inflection_index[0]+1)
             elif ini['inflection_method'] == 'ind':
                 if first_part == True:  # UGLY, needs fixing
-                    val[:inflection_index] = np.arange(1, inflection_index+1)
+                    val[:data.inflection_index[0]] = np.arange(1, data.inflection_index[0]+1)
                     first_part = False
                 else:
-                    val[inflection_index:] = np.arange(1, len(nanmask)-inflection_index+1)
+                    val[data.inflection_index[0]:] = np.arange(1, len(nanmask)-data.inflection_index[0]+1)
 
         if method == 0:
             continue
@@ -1606,7 +1612,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
         # Get the correct proxy data depending on latitude
         if len(i.data.shape) > 1:
             if lat in i.lat:
-                proxy_data = i.data[data.date_start:data.date_end][nanmask, np.where(i.lat == lat)]
+                proxy_data = i.data[nanmask, np.where(i.lat == lat)]
             else:
                 closest_lat = sorted([(lat_close, abs(lat_close - lat)) for lat_close in i.lat], key=lambda x: x[1:])[:2]
                 lat1, lat2 = closest_lat[0][0], closest_lat[1][0]
@@ -1616,7 +1622,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
                     temp_data[kk] = np.interp(lat, [lat1, lat2], [data1[kk], data2[kk]])
                 proxy_data = temp_data
         else:
-            proxy_data = i.data[data.date_start:data.date_end][nanmask]
+            proxy_data = i.data[nanmask]
         if i.method == 0:
             continue
         elif i.method == 1:
@@ -1653,7 +1659,7 @@ def normalize(X_2):
     return X_2
 
 
-def calc_trend(X, data_arr, ini, X_string):
+def calc_trend(X, data_arr, ini, X_string, inflection_index):
     nanmask = ~np.isnan(data_arr.filled(np.nan))
 
     # Get the indices of the intercept and trend to get a mean value for the coefficient
@@ -1708,31 +1714,38 @@ def calc_trend(X, data_arr, ini, X_string):
         return np.nan, np.nan, np.nan, np.nan, np.nan
 
     Xmask2, Ymask2 = np.zeros((len(X), X.shape[1])), np.zeros((len(X)))
-    k = 0
+    count = 0
     timok = list()
-    for i in range(len(X)):
-        if i == 0:
-            Xmask2[k, 0:len(Xstar[i, :])] = Xstar[i, :]
-            Ymask2[k] = Ystar[i]
-            k = k + 1
-            timok.append(i)
+    comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X])        # A combined column of all trend columns, for better comparison of consecutive values
+    if inflection_index[0]:
+        continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len([inflection_index]))]        # A list of indices at which the continuity will jump back to 1
+    else:
+        continuity_jumps = []
+    jump_num = 0
+    for k, i in enumerate(comb_trend_col):
+        if k == 0:
+            Xmask2[count, 0:len(Xstar[k, :])] = Xstar[k, :]
+            Ymask2[count] = Ystar[k]
+            count += 1
+            timok.append(k)
             continue
-        if X[i, trend_index] - X[i - 1, trend_index] == 1:
-            Xmask2[k, 0:len(Xstar[i, :])] = Xstar[i, :]
-            Ymask2[k] = Ystar[i]
-            k = k + 1
-            timok.append(i)
-        elif len(trend_string_index) >= 6:
-            if np.nansum(X[:, trend_string_index], axis=1)[i] - np.nansum(X[:, trend_string_index][i - 1]) == 1:
-                Xmask2[k, 0:len(Xstar[i, :])] = Xstar[i, :]
-                Ymask2[k] = Ystar[i]
-                k = k + 1
-                timok.append(i)
-            else:
-                continue
+        if i - comb_trend_col[k - 1] == 1:
+            Xmask2[count, 0:len(Xstar[k, :])] = Xstar[k, :]
+            Ymask2[count] = Ystar[k]
+            count += 1
+            timok.append(k)
+        elif jump_num >= len(continuity_jumps):
+            continue    # if all inflection points were already found, then the program will not look for another one
+        elif comb_trend_col[k - 1] == continuity_jumps[jump_num] and i == 1:
+            Xmask2[count, 0:len(Xstar[k, :])] = Xstar[k, :]
+            Ymask2[count] = Ystar[k]
+            count += 1
+            timok.append(k)
+            jump_num += 1
         else:
-            # print('gap in X1, ',i,k)
+            # print('gap in X1, ', k, i)
             continue
+
     Xmask2ok = Xmask2[0:k, :]
 
     # Calculate the trend coefficients
@@ -1766,7 +1779,7 @@ def iup_reg_model(data, proxies, ini):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
 
     # Get index of the inflection point
-    inflection_index = get_inflection_index(ini, data)
+    data.inflection_index = get_inflection_index(ini, data)
 
     # Creating the empty arrays for the trends and the uncertainty
     if 'inflection_method' not in ini:
@@ -1813,6 +1826,8 @@ def iup_reg_model(data, proxies, ini):
                     continue
                 i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)])
             i.data = i.data[:len(np.unique(time.year))]
+        if getattr(data, 'inflection_point', None):
+            data.inflection_index = np.where(np.unique(time.year) == time[data.inflection_index].year)[0][0]      # Change inflection point to reflect the yearly data
     elif check == 2:
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
@@ -1833,8 +1848,13 @@ def iup_reg_model(data, proxies, ini):
             #         continue
             #     i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)][np.in1d(time[time.year == ii].month, month_index)])
             # i.data = i.data[:len(np.unique(time.year))]
+        if getattr(data, 'inflection_point', None):
+            data.inflection_index = np.where(np.unique(time.year) == time[data.inflection_index].year)[0][0]      # Change inflection point to reflect the yearly data
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+
+    if not isinstance(data.inflection_index, list):
+        data.inflection_index = [data.inflection_index]
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
@@ -1870,10 +1890,7 @@ def iup_reg_model(data, proxies, ini):
                     data_arr[k] = np.nan
                     continue
                 data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
-                # if len(data_arr[np.where(time.year == i)][np.in1d(time[time.year == i].month, month_index)].nonzero()[0])/len(month_index) <= float(ini.get('skip_percentage', 0.75)):
-                #     data_arr[k] = np.nan
-                #     continue
-                # data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)][np.in1d(time[time.year == i].month, month_index)])
+
             data_arr = data_arr[:len(np.unique(time.year))]
             if anom_check == 'True':
                 if ini.get('anomaly_method', 'rel') == 'abs':
@@ -1890,7 +1907,7 @@ def iup_reg_model(data, proxies, ini):
             it.iternext()
             continue
 
-        X_1 = get_X_1(inflection_index, nanmask, ini, X_1_string, data)
+        X_1 = get_X_1(nanmask, ini, X_1_string, data)
         X_2 = get_X_2(proxies, nanmask, X_proxy_size, ini, it, data)
 
         X = np.concatenate([X_1, X_2], axis=1)
@@ -1911,7 +1928,7 @@ def iup_reg_model(data, proxies, ini):
         # X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
 
         # Calculation of the trends and uncertainties for each cell
-        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)])
+        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean

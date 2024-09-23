@@ -1659,7 +1659,7 @@ def normalize(X_2):
     return X_2
 
 
-def calc_trend(X, data_arr, ini, X_string, inflection_index):
+def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
     nanmask = ~np.isnan(data_arr.filled(np.nan))
 
     # Get the indices of the intercept and trend to get a mean value for the coefficient
@@ -1667,14 +1667,14 @@ def calc_trend(X, data_arr, ini, X_string, inflection_index):
     trend_index = trend_string_index[0]     # To get the first trend index so that the autoregression works
 
     try:
-        beta = np.linalg.inv(X.T @ X) @ X.T @ data_arr[nanmask]
+        beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
     except:
         print('Calculation failed: NaNs')
-        return np.nan, np.nan, np.nan, np.nan, np.nan
+        return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, np.nan
 
     # Carlos autoregression program, not yet completely reworked
 
-    fity = np.matmul(X, beta)
+    fity = np.matmul(X_clean, beta)
     N = data_arr[nanmask] - fity  # what I cosider the error matrix N
 
     k, sumN = 1, 0
@@ -1687,24 +1687,24 @@ def calc_trend(X, data_arr, ini, X_string, inflection_index):
     phi = (1.0 / np.var(N)) * (sumN / (len(data_arr[nanmask]) - 1))  # autocorrelation estimator excluding gaps
 
     P, epsilon = np.zeros((len(data_arr[nanmask]), len(data_arr[nanmask]))), np.zeros((len(data_arr[nanmask])))
-    for i in range(len(X))[1:]:  # I am starting from the second line
-        for g in range(len(X)):
+    for i in range(len(X_clean))[1:]:  # I am starting from the second line
+        for g in range(len(X_clean)):
             if i == g:
-                if X[i, 1] - X[i - 1, 1] > 1:
+                if X_clean[i, 1] - X_clean[i - 1, 1] > 1:
                     P[i, g] = np.sqrt(1 - phi ** 2)
                     epsilon[i] = N[i] * np.sqrt(1 - phi ** 2)
                 else:
                     P[i, g] = 1
                     epsilon[i] = N[i] - phi * N[i - 1]
             elif i == g + 1:
-                if X[i, 1] - X[i - 1, 1] > 1:
+                if X_clean[i, 1] - X_clean[i - 1, 1] > 1:
                     P[i, g] = 0
                 else:
                     P[i, g] = -phi
     P[0, 0] = np.sqrt(1 - phi ** 2)  # this is the first line
     epsilon[0] = N[0] * np.sqrt(1 - phi ** 2)
 
-    Xstar = np.matmul(P, X)
+    Xstar = np.matmul(P, X_clean)
     Ystar = np.matmul(P, data_arr[nanmask])
     try:
         betaa = np.linalg.inv(Xstar.T @ Xstar) @ Xstar.T @ Ystar
@@ -1713,10 +1713,10 @@ def calc_trend(X, data_arr, ini, X_string, inflection_index):
         print('Two or more proxies are dependent to each other. A linear regression is not possible. Please either turn of linear regression or turn off one of the proxies.')
         return np.nan, np.nan, np.nan, np.nan, np.nan
 
-    Xmask2, Ymask2 = np.zeros((len(X), X.shape[1])), np.zeros((len(X)))
+    Xmask2, Ymask2 = np.zeros((len(X_clean), X_clean.shape[1])), np.zeros((len(X_clean)))
     count = 0
     timok = list()
-    comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X])        # A combined column of all trend columns, for better comparison of consecutive values
+    comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X_clean])        # A combined column of all trend columns, for better comparison of consecutive values
     if inflection_index[0]:
         continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len([inflection_index]))]        # A list of indices at which the continuity will jump back to 1
     else:
@@ -1748,11 +1748,21 @@ def calc_trend(X, data_arr, ini, X_string, inflection_index):
 
     Xmask2ok = Xmask2[0:k, :]
 
+    mult = 1
+    if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
+        mult *= 1
+    else:
+        mult *= 100 / np.nanmean(data_arr)
+    if ini.get('averaging_window', None):
+        mult *= 10
+    else:
+        mult *= 120
+
     # Calculate the trend coefficients
     try:
         if len(beta) == 1 or len(Xmask2ok) < 10:
-            trenda_z = np.nan
-            siga_z = np.nan
+            trenda_z = [np.nan] * len(trend_string_index)
+            siga_z = [np.nan] * len(trend_string_index)
         else:
             if ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'rel':
                 trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100
@@ -1760,15 +1770,19 @@ def calc_trend(X, data_arr, ini, X_string, inflection_index):
             elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'abs') == 'rel':
                 print('NOT YET FINISHED')
             else:
-                siga_z = np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])))
-                if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
-                    trenda_z = np.nanmean(betaa[trend_string_index]) * 120
-                else:
-                    trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr)
+                siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
+                trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
+                # siga_z = np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])))
+                # if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
+                #     trenda_z = np.abs(betaa[trend_string_index]) * 120 if len(trend_string_index) == 1 else [np.abs(betaa[i]) * 120 for i in trend_string_index]
+                    # trenda_z = np.nanmean(betaa[trend_string_index]) * 120
+                # else:
+                #     trenda_z = np.abs(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr) if len(trend_string_index) == 1 else [np.abs(betaa[i]) * 120 * 100 / np.nanmean(data_arr) for i in trend_string_index]
+                    # trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr)
 
     except:
-        trenda_z = np.nan
-        siga_z = np.nan
+        trenda_z = [np.nan] * len(trend_string_index)
+        siga_z = [np.nan] * len(trend_string_index)
         print('Failed to calculate the trend and significants')
 
     return trenda_z, siga_z, beta, betaa, np.diag(covbetaa)
@@ -1780,6 +1794,8 @@ def iup_reg_model(data, proxies, ini):
 
     # Get index of the inflection point
     data.inflection_index = get_inflection_index(ini, data)
+    if not isinstance(data.inflection_index, list):
+        data.inflection_index = [data.inflection_index]
 
     # Creating the empty arrays for the trends and the uncertainty
     if 'inflection_method' not in ini:
@@ -1794,6 +1810,13 @@ def iup_reg_model(data, proxies, ini):
         trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         X_string = ['intercept', 'independent trend first part', 'intercept', 'independent trend second part']
+
+    # Expand dimension of trends and uncertainties, depending on number of inflection points
+    if data.inflection_index[0]:
+        trenda_z = np.expand_dims(trenda_z, axis=-1)
+        trenda_z = np.tile(trenda_z, (1,) * (trenda_z.ndim - 1) + (len(data.inflection_index) + 1,))
+        siga_z = np.expand_dims(siga_z, axis=-1)
+        siga_z = np.tile(siga_z, (1,) * (siga_z.ndim - 1) + (len(data.inflection_index) + 1,))
 
     if 'trend_method' not in ini:
         ini['trend_method'] = 1
@@ -1826,8 +1849,9 @@ def iup_reg_model(data, proxies, ini):
                     continue
                 i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)])
             i.data = i.data[:len(np.unique(time.year))]
-        if getattr(data, 'inflection_point', None):
-            data.inflection_index = np.where(np.unique(time.year) == time[data.inflection_index].year)[0][0]      # Change inflection point to reflect the yearly data
+        if getattr(data, 'inflection_index', None):
+            for k, i in enumerate(data.inflection_index):
+                data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]  # Change inflection point to reflect the yearly data
     elif check == 2:
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
@@ -1848,13 +1872,11 @@ def iup_reg_model(data, proxies, ini):
             #         continue
             #     i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)][np.in1d(time[time.year == ii].month, month_index)])
             # i.data = i.data[:len(np.unique(time.year))]
-        if getattr(data, 'inflection_point', None):
-            data.inflection_index = np.where(np.unique(time.year) == time[data.inflection_index].year)[0][0]      # Change inflection point to reflect the yearly data
+        if getattr(data, 'inflection_index', None)[0]:
+            for k, i in enumerate(data.inflection_index):
+                data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]      # Change inflection point to reflect the yearly data
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
-
-    if not isinstance(data.inflection_index, list):
-        data.inflection_index = [data.inflection_index]
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])

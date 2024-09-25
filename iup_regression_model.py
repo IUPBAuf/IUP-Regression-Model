@@ -363,6 +363,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 time_var[:] = time_int
                 frac_var[:] = frac_year
 
+                f.configuration = "; ".join([f"{key} = {value}" for key, value in self.ini.items()])
+
     def data_diagnostic_changed_cell(self):
         data = self.list_of_data[self.data_list.currentRow()]
 
@@ -833,9 +835,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Preparing Plot values
         data = self.current_data
-        print(self.plot_indices)
         indices = tuple([slice(None)] + list(self.plot_indices))
-        print(indices)
 
         X = data.time
         Y = data.o3[indices]
@@ -847,38 +847,20 @@ class AppWindow(QtWidgets.QMainWindow):
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(self.plot_indices)][valid_cols])
 
-        if 'inflection_method' in self.current_ini:
-            # Loop over the amount of inflection points, to write string for the trend value textbox
-            for k, i in enumerate(Y_trend):
-                # trend_string += 'trend ' + str(k) + ': ' + str(round(i, 2)) + '+/-' + str(round(Y_signi[k], 2)) + '\n'
-                trend_string += 'trend ' + str(k) + ': ' + str(round(i, 2)) + '%/decade' '\n'
-            trend_string = trend_string[:-1]
+        slope_beta = []
+        slope_X = []
+        str_groups = get_string_groups(self.proxy_string)
+        for key, i in str_groups.items():
+            if key[1] == 'month-of-the-year':
+                slope_beta.append(np.nanmean(self.betaa[tuple(self.plot_indices)][i], axis=0))
+                slope_X.append([np.nanmax(row[tuple(self.plot_indices)][i]) for row in self.X])
+            else:
+                slope_beta.append(self.betaa[tuple(self.plot_indices)][i[0]])
+                slope_X.append(self.X[indices][:, i[0]])
 
-            if self.current_ini['inflection_method'] == 'pwl':
-                Y_slope = np.matmul(self.X[indices][valid_rows][:, valid_cols][:, :3], self.betaa[tuple(self.plot_indices)][valid_cols][:3])
-            elif self.current_ini['inflection_method'] == 'ind':
-                Y_slope = np.matmul(self.X[indices][valid_rows][:, valid_cols][:, :4], self.betaa[tuple(self.plot_indices)][valid_cols][:4])
-                try:
-                    Y_slope[np.where(self.time[valid_rows] == dt.datetime.strptime(self.current_ini['inflection_point'], self.current_ini['time_format']).date().replace(day=15))[0][0]] = np.nan
-                except:
-                    pass
-        else:
-            trend_string_index = [k for k, s in enumerate(np.array(self.proxy_string)[valid_cols]) if 'trend' in s]
-            intercept_string_index = [k for k, s in enumerate(np.array(self.proxy_string)[valid_cols]) if 'intercept' in s]
-            # X_trend_mean = np.nanmean(self.X[indices][valid_rows][:, valid_cols][:, trend_string_index], axis=1)
-            # X_intercept_mean = np.nanmean(self.X[indices][valid_rows][:, valid_cols][:, intercept_string_index], axis=1)
-            X_trend_mean = self.X[indices][valid_rows][:, valid_cols][:, trend_string_index[0]]
-            X_intercept_mean = self.X[indices][valid_rows][:, valid_cols][:, intercept_string_index[0]]
-            # beta_trend_mean = np.nanmean(self.betaa[tuple(self.plot_indices)][valid_cols][trend_string_index])
-            # beta_intercept_mean = np.nanmean(self.betaa[tuple(self.plot_indices)][valid_cols][intercept_string_index])
-            beta_trend_mean = self.betaa[tuple(self.plot_indices)][valid_cols][trend_string_index[0]]
-            beta_intercept_mean = self.betaa[tuple(self.plot_indices)][valid_cols][intercept_string_index[0]]
-
-            Y_slope = np.matmul(np.vstack((X_intercept_mean, X_trend_mean)).T, np.vstack((beta_intercept_mean, beta_trend_mean)))
-
-            # Y_slope = np.matmul(self.X[indices][valid_rows][:, valid_cols][:, :2], self.betaa[tuple(self.plot_indices)][valid_cols][:2])
-            # trend_string += 'trend: ' + str(round(Y_trend, 2)) + '+/-' + str(round(Y_signi, 2))
-            trend_string += 'trend: ' + str(round(Y_trend, 2)) + '%/decade'
+        string_index = [j for j, s in enumerate(np.array(self.proxy_string)[valid_cols]) if ('trend' in s and ' 1' in s) or ('intercept' in s and ' 1' in s)]
+        # Y_slope = self.X[indices][valid_rows][:, valid_cols][:, string_index] @ self.betaa[tuple(self.plot_indices)][valid_cols][string_index]
+        Y_slope = np.array(slope_X).T @ np.array(slope_beta)
 
         plot_number = 1
 
@@ -894,8 +876,7 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
-            ax.plot(self.time[valid_rows], Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
-            # ax.plot(self.time)
+            ax.plot(self.time[valid_rows], Y_slope[valid_rows], path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
             y_label_cor = 0.025
             self.canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
             x_label_cor = 0.02
@@ -1124,6 +1105,38 @@ def parse_time(value):
         raise ValueError(f"Unrecognized date format: {value}")
 
 
+def get_string_groups(string_list):
+    # This function will look into a list of strings and create a dictionary with different groups and their respective indices of the original list
+    pattern_group = re.compile(r'(intercept|trend) #(\d+)')
+    pattern_no_group = re.compile(r'(intercept|trend)')
+    groups = {}
+    attribute_list = ['single', 'harmonic', 'month-of-the-year']
+
+    for k, i in enumerate(string_list):
+        match = pattern_group.search(i)
+        index = [kk for kk, s in enumerate(attribute_list) if s in i]
+        # print(i)
+        if index[0] == None:
+            continue
+        if match and attribute_list[index[0]] in i:
+            type_ = match.group(1)
+            number = int(match.group(2))
+            key = (type_, str(attribute_list[index[0]]) , number)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(k)
+        else:
+            match = pattern_no_group.search(i)
+            if match and attribute_list[index[0]] in i:
+                type_ = match.group(1)
+                key = (type_, str(attribute_list[index[0]]), None)
+                if key not in groups:
+                    groups[key] = []
+                groups[key].append(k)
+
+    return groups
+
+
 def averaging_window_text_check(input):
     # Returns 0 if the format is not recongnized, 1 if it's a yearly mean and 2 if it's the mean of certain months
     input = str(input)
@@ -1178,8 +1191,10 @@ def load_default_proxies(ini):
         proxy_list = default_boundary_settings(proxy_list)
 
     for k, i in enumerate(proxy_list):
-        i.method = int(ini.get('default_proxy_method', 2))
-        i.seas_comp = int(ini.get('default_seasonal_component', 3))
+        proxy_method_str = 'default_proxy_' + str(k) + '_method'
+        proxy_seasonal_str = 'default_proxy_' + str(k) + '_seasonal'
+        i.method = int(ini.get(proxy_method_str, ini.get('default_proxy_method', 2)))
+        i.seas_comp = int(ini.get(proxy_seasonal_str, ini.get('default_seasonal_component', 2)))
         i.source = [ini['proxy_path'], int(2 + k)]
 
     return proxy_list
@@ -1415,7 +1430,8 @@ def get_inflection_index(ini, data):
 
 
 def calc_new_Xstring(X_string, ini):
-    intercept_ind = np.where(np.array(X_string) == 'intercept')[0]
+    # intercept_ind = np.where(np.array(X_string) == 'intercept')[0]
+    intercept_ind = [j for j, s in enumerate(np.array(X_string)) if 'intercept' in s]
 
     new_X_string = []
     size_array = [0, 1, 1, 12]
@@ -1483,7 +1499,6 @@ def get_X_1(nanmask, ini, X_1_string, data):
         raise Exception('The inflection method in the config.ini file is not being recognized. Either use "pwl" for piece-wise linear trends or "ind" for independent trends. If none of these should be used, please delete the inflection method line or comment it out with "#".')
 
     X_1 = np.zeros((len(nanmask), len(X_1_string)), dtype=float)
-
     # MULTIPLE INFLECTION POINTS ARE NOT YET SUPPORTED! THE PROGRAM WILL ALWAYS USE THE FIRST INFLECTION POINT
 
     col = 0
@@ -1537,14 +1552,6 @@ def get_X_1(nanmask, ini, X_1_string, data):
                 X_1[:, col] = val * np.cos(((kk + 1) * 2 * np.pi * np.arange(1, len(nanmask)+1))/12)
                 col += 1
 
-            # X_1[:, col] = val * np.sin((2 * np.pi * np.arange(1, len(nanmask)+1)) / 12)
-            # col += 1
-            # X_1[:, col] = val * np.cos((2 * np.pi * np.arange(1, len(nanmask)+1)) / 12)
-            # col += 1
-            # X_1[:, col] = val * np.sin((4 * np.pi * np.arange(1, len(nanmask)+1)) / 12)
-            # col += 1
-            # X_1[:, col] = val * np.cos((4 * np.pi * np.arange(1, len(nanmask)+1)) / 12)
-            # col += 1
         elif method == 3:
             month_array = np.array(pd.to_datetime(data.time[data.date_start:data.date_end]).month)
             for kk in range(12):
@@ -1664,7 +1671,8 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
 
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
-    trend_index = trend_string_index[0]     # To get the first trend index so that the autoregression works
+    groups = get_string_groups(X_string)
+    # trend_index = trend_string_index[0]     # To get the first trend index so that the autoregression works
 
     try:
         beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
@@ -1770,22 +1778,27 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
             elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'abs') == 'rel':
                 print('NOT YET FINISHED')
             else:
-                siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
-                trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
-                # siga_z = np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])))
-                # if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
-                #     trenda_z = np.abs(betaa[trend_string_index]) * 120 if len(trend_string_index) == 1 else [np.abs(betaa[i]) * 120 for i in trend_string_index]
-                    # trenda_z = np.nanmean(betaa[trend_string_index]) * 120
-                # else:
-                #     trenda_z = np.abs(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr) if len(trend_string_index) == 1 else [np.abs(betaa[i]) * 120 * 100 / np.nanmean(data_arr) for i in trend_string_index]
-                    # trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100 / np.nanmean(data_arr)
+                trenda_z = []
+                siga_z = []
+                for keys, indices in groups.items():
+                    # print(keys, indices)
+                    if keys[0] == 'intercept':
+                        continue
+                    if keys[1] == 'month-of-the-year':
+                        trenda_z.append(np.nanmean(betaa[indices]) * mult)
+                        siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                    else:
+                        trenda_z.append(betaa[indices[0]] * mult)
+                        siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                # siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
+                # trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
 
     except:
         trenda_z = [np.nan] * len(trend_string_index)
         siga_z = [np.nan] * len(trend_string_index)
         print('Failed to calculate the trend and significants')
 
-    return trenda_z, siga_z, beta, betaa, np.diag(covbetaa)
+    return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
 
 
 # Main program to run
@@ -1805,11 +1818,11 @@ def iup_reg_model(data, proxies, ini):
     elif ini['inflection_method'] == 'pwl':
         trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        X_string = ['intercept', 'trend', 'piece-wise-linear-trend']
+        X_string = ['intercept', 'trend', 'piece-wise-linear trend']
     elif ini['inflection_method'] == 'ind':
         trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        X_string = ['intercept', 'independent trend first part', 'intercept', 'independent trend second part']
+        X_string = ['intercept #1', 'independent trend #1', 'intercept #2', 'independent trend #2']
 
     # Expand dimension of trends and uncertainties, depending on number of inflection points
     if data.inflection_index[0]:
@@ -1882,7 +1895,7 @@ def iup_reg_model(data, proxies, ini):
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
 
     while not it.finished:
-        print(it.multi_index)
+        print('Calculating trend with index ' + str(it.multi_index))
 
         data_arr = data.o3[(slice(None),) + it.multi_index]
         data_arr = data_arr[data.date_start:data.date_end]
@@ -1947,8 +1960,7 @@ def iup_reg_model(data, proxies, ini):
         X_clean[np.isnan(X_clean)] = 0
 
         # Normalize
-        # X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
-
+        X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
         # Calculation of the trends and uncertainties for each cell
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 

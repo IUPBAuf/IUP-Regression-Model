@@ -23,6 +23,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
+ver = 'alpha 1.0'
+
 # Default class for proxies to be saved as
 class Proxy:
 
@@ -312,7 +314,6 @@ class AppWindow(QtWidgets.QMainWindow):
                     lon_var[:] = lon
                     lon_var.units = 'degrees_east'
                     lon_var.long_name = 'longitude'
-
                 if alt is not None:
                     f.createDimension('alt', len(alt))
                     alt_var = f.createVariable('alt', 'f8', ('alt',))
@@ -321,41 +322,37 @@ class AppWindow(QtWidgets.QMainWindow):
                     alt_var.long_name = 'altitude'
 
                 max_length = max(len(s) for s in self.proxy_string)
-                f.createDimension('proxy', len(self.proxy_string))
+                f.createDimension('n_coefficients', len(self.proxy_string))
                 f.createDimension('string_length', max_length)
                 f.createDimension('time', len(self.time))
                 f.createDimension('infl', 2)
 
-                # Needs improvement so it works well with netCDF
-                ind_var = f.createVariable('independent variable names', 'str', ('proxy',))
+                ind_var = f.createVariable('independent_variable_names', 'str', ('n_coefficients',))
                 ind_var[:] = np.array(self.proxy_string)
-                proxy_var = f.createVariable('proxy', 'S1', ('proxy', 'string_length'))
-                for k, s in enumerate(self.proxy_string):
-                    proxy_var[k, :len(s)] = np.array(list(s), dtype='S1')
 
                 time_var = f.createVariable('date', 'S10', 'time')
+                time_var.unit = 'YYYYMMDD'
+                frac_var = f.createVariable('fractional_year', 'f4', ('time',), compression="zlib")
 
                 dim_tuple = tuple(dim_name for dim_name in dims)
-                X_var = f.createVariable('independent variable matrix', 'f4', dim_tuple + ('proxy',))
+                X_var = f.createVariable('independent_variable_matrix', 'f4', dim_tuple + ('n_coefficients',), compression="zlib")
                 X_var[:] = self.X
-                beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('proxy',))
+                beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 beta_var[:] = self.betaa
-                covb_var = f.createVariable('covbeta', 'f4', dim_tuple[1:] + ('proxy',))
+                covb_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 covb_var[:] = self.convbeta
 
                 if len(self.trends.shape) == len(dim_tuple):
                     trend_var = f.createVariable('trend', 'f4', dim_tuple[1:] + ('infl',))
-                    sig_var = f.createVariable('sig', 'f4', dim_tuple[1:] + ('infl',))
+                    sig_var = f.createVariable('trend_uncertainty', 'f4', dim_tuple[1:] + ('infl',))
                 else:
                     trend_var = f.createVariable('trend', 'f4', dim_tuple[1:])
-                    sig_var = f.createVariable('sig', 'f4', dim_tuple[1:])
+                    sig_var = f.createVariable('trend_uncertainty', 'f4', dim_tuple[1:])
                 trend_var[:] = self.trends
                 sig_var[:] = self.signi
 
-                frac_var = f.createVariable('fractional year', 'f4', ('time',))
-
                 X_var.long_name = 'Independent Variable matrix'
-                beta_var.long_name = 'Trend coefficient'
+                beta_var.long_name = 'Fit Parameters'
 
                 frac_year = convert_datetime_to_fractional(self.time)
 
@@ -363,7 +360,11 @@ class AppWindow(QtWidgets.QMainWindow):
                 time_var[:] = time_int
                 frac_var[:] = frac_year
 
-                f.configuration = "; ".join([f"{key} = {value}" for key, value in self.ini.items()])
+                f.program = 'IUP_regression_model'
+                f.version = ver
+                f.contact = '''Name: Brian Auffarth\rAffiliation: University of Bremen\rE-mail: brian@iup.physik.uni-bremen.de'''
+                f.date_of_creation = dt.datetime.today().strftime('%Y-%m-%d')
+                f.configuration_settings = "\n".join([f"{key} = {value}" for key, value in self.ini.items()])
 
     def data_diagnostic_changed_cell(self):
         data = self.list_of_data[self.data_list.currentRow()]
@@ -1350,7 +1351,6 @@ def save_netCDF(current_data, trends, signi, diagnostic, ini):
                     lon_var[:] = lon
                     lon_var.units = 'degrees_east'
                     lon_var.long_name = 'longitude'
-
                 if alt is not None:
                     f.createDimension('alt', len(alt))
                     alt_var = f.createVariable('alt', 'f8', ('alt',))
@@ -1359,45 +1359,52 @@ def save_netCDF(current_data, trends, signi, diagnostic, ini):
                     alt_var.long_name = 'altitude'
 
                 max_length = max(len(s) for s in diagnostic[3])
-                f.createDimension('proxy', len(diagnostic[3]))
+                f.createDimension('n_coefficients', len(diagnostic[3]))
                 f.createDimension('string_length', max_length)
                 f.createDimension('time', len(diagnostic[4]))
                 f.createDimension('infl', 2)
 
-                # Needs improvement so it works well with netCDF
-                proxy_var = f.createVariable('proxy', 'S1', ('proxy', 'string_length'))
-                for k, s in enumerate(diagnostic[3]):
-                    proxy_var[k, :len(s)] = np.array(list(s), dtype='S1')
+                ind_var = f.createVariable('independent_variable_names', 'str', ('n_coefficients',))
+                ind_var[:] = np.array(diagnostic[3])
+                # proxy_var = f.createVariable('proxy', 'S1', ('n_coefficients', 'string_length'), compression="zlib")
+                # for k, s in enumerate(diagnostic[3]):
+                #     proxy_var[k, :len(s)] = np.array(list(s), dtype='S1')
 
-                time_var = f.createVariable('date', 'S10', 'time')
+                time_var = f.createVariable('date', 'S10', 'time', compression="zlib")
+                time_var.unit = 'YYYYMMDD'
+                frac_var = f.createVariable('fractional_year', 'f4', ('time',), compression="zlib")
 
                 dim_tuple = tuple(dim_name for dim_name in dims)
-                X_var = f.createVariable('independent variable matrix', 'f4', dim_tuple + ('proxy',))
+                X_var = f.createVariable('independent_variable_matrix', 'f4', dim_tuple + ('n_coefficients',), compression="zlib")
                 X_var[:] = diagnostic[0]
-                beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('proxy',))
+                beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 beta_var[:] = diagnostic[2]
-                covb_var = f.createVariable('covbeta', 'f4', dim_tuple[1:] + ('proxy',))
+                covb_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 covb_var[:] = diagnostic[3]
 
                 if len(trends.shape) == len(dim_tuple):
-                    trend_var = f.createVariable('trend', 'f4', dim_tuple[1:] + ('infl',))
-                    sig_var = f.createVariable('sig', 'f4', dim_tuple[1:] + ('infl',))
+                    trend_var = f.createVariable('trend', 'f4', dim_tuple[1:] + ('infl',), compression="zlib")
+                    sig_var = f.createVariable('trend_uncertainty', 'f4', dim_tuple[1:] + ('infl',), compression="zlib")
                 else:
-                    trend_var = f.createVariable('trend', 'f4', dim_tuple[1:])
-                    sig_var = f.createVariable('sig', 'f4', dim_tuple[1:])
+                    trend_var = f.createVariable('trend', 'f4', dim_tuple[1:], compression="zlib")
+                    sig_var = f.createVariable('trend_uncertainty', 'f4', dim_tuple[1:], compression="zlib")
                 trend_var[:] = trends
                 sig_var[:] = signi
 
-                frac_var = f.createVariable('fractional year', 'f4', ('time',))
-
                 X_var.long_name = 'Independent Variable matrix'
-                beta_var.long_name = 'Trend coefficient'
+                beta_var.long_name = 'Fit Parameters'
 
                 frac_year = convert_datetime_to_fractional(diagnostic[4])
 
                 time_int = np.array([str_time.strftime('%Y-%m-%d') for str_time in diagnostic[4]])
                 time_var[:] = time_int
                 frac_var[:] = frac_year
+
+                f.program = 'IUP_regression_model'
+                f.version = ver
+                f.contact = '''Name: Brian Auffarth\rAffiliation: University of Bremen\rE-mail: brian@iup.physik.uni-bremen.de'''
+                f.date_of_creation = dt.datetime.today().strftime('%Y-%m-%d')
+                f.configuration_settings = "\n".join([f"{key} = {value}" for key, value in ini.items()])
 
 
 def is_between(val, low_lim, up_lim):

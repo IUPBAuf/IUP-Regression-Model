@@ -891,9 +891,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.canvas.draw()
 
     def print_ini(self):
-        for i in self.ini:
-            print(i, self.ini[i])
-        print('\n\n')
+        print('brian@iup.physik.uni-bremen.de')
 
 
 def load_config_ini(ini_path):

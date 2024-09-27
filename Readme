@@ -1,35 +1,135 @@
 IUP Regression Model Readme
 Author: Brian Auffarth
+Contact: brian@iup.physik.uni-bremen.de
+Version: alpha 1.0
 
-1. pip install -r requirements.txt
+1. Installation:
 
-There are two ways to use the IRM (IUP Regression Model). Either you use the user interface through the command "iup_ui()" or just with the config.ini file.
+    1.1 To install all requirements of this program run the following command in the console
+        
+            pip install -r requirements.txt
+        
+        This program was tested with Python 3.9, but should function with older versions as well. If some modules can't be installed due to using an older python version, try installing them by hand, using the following command:
 
-Creating trends with the user interface:
-1. Run the "iup_ui()" command
-2. In the interface go to "File" and choose "Load Data" to load a netCDF file with the ozone data.
-    2.1 If the netCDF files include variables of very specific names or the program can't load the data properly, go to "Settings" -> "Load Settings" and change the variable names to the ones in your netCDF file
-    2.2 You can check your loaded data in the Diagnostic tab.
-3. For additional proxy data, go to "File" and choose "Load Proxy File".
-    3.1 Proxy data can also be checked in the diagnostic tab under "Proxies"
-4. Choose which proxies to use and what kind of method should be used for them under in the "Options" tab.
-5. Enable or disable an inflection point and put in a date for the inflection point.
-    5.1 A green checkmark will show up if the date is in a recongnized format.
-6. Hit the "Compute" button on the bottom of the interface and wait for it to finish.
-7. You can now plot the data in the "Plotting" tab to see if everything looks good.
-8. Go to "File" -> "Save" and save the computed trend as netCDF.
+            pip install numpy
+        
+        Change "numpy" for the module that could not be installed through the requirements.txt file.
+    
+    1.2 In the config.ini file in the "config folder" directory, change the "data_path" to the exact path to SAGE-SCIA-OMPS.nc file or to another  netCDF file of your choice.
 
-Creating trends with the config.ini:
-1. Open the "config.ini" file
-2. Change the settings for your trends
-3. In Python use the command "ini = load_config_ini('config.ini')" to load the config.ini.
-    3.1 Change the path of the .ini to the correct one on your system
-4. Load your data with this command "data = load_data(ini, lat=None, lon=None, alt=None, time=None, atmo_parameter=None, name="My Data")"
-    4.1 Replace "None" with your dimensions and variables
-5. Load proxies "proxies = load_default_proxies(ini)"
-    5.1 Load additional proxies that were specified in the confi.ini "proxies = load_additional_proxies(proxies, ini)"
-    5.2 You can check your proxies by using "proxies[x].name" and "proxies[x].method", where x is an integer that defines the proxy order.
-        5.2.1 You can change the method how each proxy will be used. For example "proxies[0].method = 0" disables the first proxy.
-        5.2.2 The following 4 methods are implemented: 0 = disabled; 1 = singular; 2 = harmonically; 3 = month of the year
-6. Compute the trends with all previous done changes with "trends, signi = iup_reg_model(data, proxies, ini)"
-    6.1 This function gives out the coefficients for the trend and the significance
+    1.3 You can now run the IUP Regression Model.
+
+
+2. Running the default setup
+
+    2.1 With the changes to the data_path in 1.2, you can now run the program, using the following command in the console
+    
+            python3.9 path_to_model/iup_regression_model.py
+    
+        Change the python version to the one installed on your system and change the path to the place of the iup_regression_model.py file.
+    
+    2.2 Adding --ui at the end of the command will open the user interface in which you can directly change the settings of the trend.
+    
+    2.3 After running the program, a new file with the trend data will be created in the safe_folder directory.
+    
+    2.4 The "#" before the "inflection_method" and the "inflection_point" can be removed to add an inflection pont in January 2000 using the independent trend method. The method can also be changed to "pwl" by just replacing the "ind" with "pwl".
+    
+    2.5 If there is just a need for a specific time frame, remove the "#" before "star_date" and "end_date" to create a trend within this time frame. These can also be used independently.
+    
+
+3. Settings
+
+    To change the settings of the program, either use the config.ini or change it directly in the user interface. The user interface uses the settings of the config.ini file, so changes there will be imported into the user interface. Lines that start with "#" will be ignored by the program.
+    
+    3.1 data_path - the path to the netCDF file with the ozone data
+    
+    3.2 time_format - the format in which the time is saved in the netCDF ozone data file
+    
+    3.3 ...-var - the -var attributes are the variable names of the corresponding values in the netCDF file. If ozone is saved in the netCDF file under "ozone", the line should read "o3_var = ozone". When loading ozone data with the user interface, it will give a selection of all variable names so the user can chose without much manual input.
+    
+    3.4 ..._var_unit - the -var_unit attribute is mostly optional but can improve the output of the trend data. The altitude unit will help in the future with limits for the proxies. The ozone units will help with the figure as well as the correct calculation of the trend (e.g. %/decade)
+    
+    3.5 inflection_point = %Y-%m - the date at which the inflection point is supposed to be
+    
+    3.6 inflection_method = ind/pwl - the method that is used for the inflection. Either "ind" for independent trends or "pwl" for piece-wise-linear trends
+    
+    3.7 start_date = %Y-%m - the date from which the calculation of the trend is supposed to start
+    
+    3.8 end_date = %Y-%m - the date at which the calculation of the trend is supposed to end
+    
+    3.9 averaging_window - this option will average the months for a yearly mean. Using "averaging_window = 1, 2, 3" will use the first, second and third month starting from the start date and take the mean of these months. To easily take the mean over the whole year, use "averaging_window = yearly"
+    
+    3.10 anomaly = True/False - The trend will be calculated using the anomaly
+    
+    3.11 anomaly_method = rel/abs - Change if the anomaly trend should be relative or absolute
+    
+    3.12 skip_percentage - If enabled, this will skip calculation of cells if the usable data (not NaNs) falls under this threshold in respect to the complete time series
+    
+    3.13 default_seasonal_component = 1/2/3/4 - Changes the seasonal component of all values to either 1 = annual, 2 = semi-annual, 3 = tri-annual or 4 = quarter-annual
+    
+    3.14 trend_seasonal_component = 1/2/3/4 - Changes the seasonal component just for the trend terms
+    
+    3.15 intercept_seasonal_component = 1/2/3/4 - Changes the seasonal component just for the intercept terms
+    
+    3.16 trend_method = 0/1/2/3 - Changes the method how the trend terms will be used to either 0 = disabled, 1 = single, 2 = harmonic, 3 = month-of-the-year
+    
+    3.17 intercept_method = 0/1/2/3 - Changes the method how the intercept terms will be used
+    
+    3.18 default_proxy_method = 0/1/2/3 - Changes the method how all proxy terms will be used
+    
+    3.19 default_proxy_x_method = 0/1/2/3 - Changes the method how one of the default proxies will be used. x can be change to 1 to 8
+    
+    3.20 default_proxy_seasonal = 1/2/3/4 - Same as 3.19 just for the seasonal component
+    
+    3.21 additional_proxy_path - the path the an additional ascii proxy file
+    
+    3.22 additional_proxy_time_col - the column which indicates the time for the additional proxy. if the time is seperated into different columns, seperate the column indices with ",". For example "additional_proxy_time_col = 0, 1"
+    
+    3.23 additional_proxy_data_col - the column which indicates the data for the additional proxy
+    
+    3.24 additional_proxy_method - same as 3.19
+    
+    3.25 additional_proxy_seas_comp - same as 3.20
+    
+    3.26 additional_time_format - the format how the time is saved for the proxy data
+    
+    3.27 proxy_path - the default proxy setup file path (Does not need to be changed usually)
+    
+    3.28 aod_path - the default aod proxy file path (Does not need to be changed usually)
+    
+    3.29 save_folder_path - path to the save folder in which the created trend netCDF files will be created
+
+    
+4. Additional Proxies
+
+    4.1 To add additional proxies to the calculation, use the lines from 3.21, 3.22 and 3.23. This will add the additional proxy to the independent variable matrix.
+    
+    4.2 Adding more additional proxies to the independent variable matrix is done by just doing step 4.1 again. Use the same line attributes again:
+    
+        additional_proxy_path =
+        additional_proxy_time_col = 
+        additional_proxy_data_col =
+
+5. Information
+
+    5.1 This is an alpha version of the program which means it was not tested thoroughly yet.
+    
+    5.2 Right now, some features were turned off or reduced to have a more stable version and to not confuse users too much until these features are implemented better.
+    
+        5.2.1 "Save Configuration" is not yet enabled.
+        
+        5.2.2 "Contact" only prints the contact mail in the console.
+        
+        5.2.3 "Diagnostic X" and "Diagnostic Data" are disabled because of the newly added yearly data which did not work properly with these outputs.
+        
+        5.2.4 "Presets" does not change the proxy methods or seasonal components and also does not yet load the additional proxies.
+        
+    5.3 Some features or combinations of features might be unstable. If the program crashes due to some error, please contact me so that I can fix it.
+    
+    5.4 If the following error occurs:
+    
+            AttributeError: 'NoneType' object has no attribute 'name'
+        
+        This means that the data was not loaded properly. Check the variable names and the time format to see if everything is correct.
+        
+    5.5 Many error exceptions were not included yet, so that I can better identify errors.

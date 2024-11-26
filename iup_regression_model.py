@@ -17,13 +17,13 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from PyQt5 import QtWidgets, QtGui, uic
+from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QHeaderView, QFileDialog, QMessageBox
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.0'
+ver = 'alpha 1.1'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -645,7 +645,7 @@ class AppWindow(QtWidgets.QMainWindow):
             if check == 2:
                 month_list = re.split(r',\s*', str(self.sender().text()))
                 month_list = np.array([int(num) for num in month_list])
-                string = [months_str[i] for i in month_list]
+                string = [months_str[i-1] for i in month_list]
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + ', '.join(string) + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
             else:
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + 'all' + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
@@ -835,17 +835,30 @@ class AppWindow(QtWidgets.QMainWindow):
         self.canvas.figure.clf()
 
         # Preparing Plot values
-        data = self.current_data
+        data = copy.copy(self.current_data)
         indices = tuple([slice(None)] + list(self.plot_indices))
 
         X = data.time
         Y = data.o3[indices]
-        Y_trend = self.trends[tuple(self.plot_indices)]
-        Y_signi = self.signi[tuple(self.plot_indices)]
-        trend_string = ''
 
         valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
+
+        time = pd.DatetimeIndex(data.time)
+
+        if self.anomaly_check.isChecked() and self.radio_abs.isChecked():
+            for k in range(12):
+                Y[time.month == k + 1] = data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
+        elif self.anomaly_check.isChecked() and self.radio_rel.isChecked():
+            for k in range(12):
+                Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
+
+
+        Y_trend = self.trends[tuple(self.plot_indices)]
+        if not isinstance(Y_trend, list):
+            Y_trend = [Y_trend]
+        Y_signi = self.signi[tuple(self.plot_indices)]
+
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(self.plot_indices)][valid_cols])
 
         slope_beta = []
@@ -858,13 +871,11 @@ class AppWindow(QtWidgets.QMainWindow):
             else:
                 slope_beta.append(self.betaa[tuple(self.plot_indices)][i[0]])
                 slope_X.append(self.X[indices][:, i[0]])
+        trend_string = "\n".join([f"trend {i+1}: {v:.2f}%/decade" for i, v in enumerate(Y_trend)])
 
-        string_index = [j for j, s in enumerate(np.array(self.proxy_string)[valid_cols]) if ('trend' in s and ' 1' in s) or ('intercept' in s and ' 1' in s)]
-        # Y_slope = self.X[indices][valid_rows][:, valid_cols][:, string_index] @ self.betaa[tuple(self.plot_indices)][valid_cols][string_index]
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
-
         plot_number = 1
-
+        print(slope_beta)
         self.canvas.axes_list = [self.canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
         bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
@@ -1023,6 +1034,8 @@ def get_proxy_time_overlap(ini, proxies, data):
     new_data.date_end = np.where(new_data.time == date_end)[0][0]
 
     for i in new_proxies:
+        if i.method == 0:
+            continue
         i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
         i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
 
@@ -1735,6 +1748,7 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
     else:
         continuity_jumps = []
     jump_num = 0
+
     for k, i in enumerate(comb_trend_col):
         if k == 0:
             Xmask2[count, 0:len(Xstar[k, :])] = Xstar[k, :]
@@ -1836,10 +1850,8 @@ def iup_reg_model(data, proxies, ini):
         siga_z = np.expand_dims(siga_z, axis=-1)
         siga_z = np.tile(siga_z, (1,) * (siga_z.ndim - 1) + (len(data.inflection_index) + 1,))
 
-    if 'trend_method' not in ini:
-        ini['trend_method'] = 1
-    if 'intercept_method' not in ini:
-        ini['intercept_method'] = 1
+    ini['trend_method'] = ini.get('trend_method', 1)
+    ini['intercept_method'] = ini.get('intercept_method', 1)
 
     # check how the data should be averaged
     check = averaging_window_text_check(ini.get('averaging_window', ''))
@@ -1854,6 +1866,7 @@ def iup_reg_model(data, proxies, ini):
     X_proxy_size, X_2_string = calc_proxy_size(proxies)
 
     X_string = X_1_string + X_2_string
+    groups = get_string_groups(X_string)
 
     if check == 0:
         X_all = np.empty((data.o3[data.date_start:data.date_end, ...].shape + (len(X_string),)), dtype='f4') * np.nan
@@ -1900,7 +1913,7 @@ def iup_reg_model(data, proxies, ini):
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
 
     while not it.finished:
-        print('Calculating trend with index ' + str(it.multi_index))
+        print(str(it.multi_index) + ' Calculating trend with index')
 
         data_arr = data.o3[(slice(None),) + it.multi_index]
         data_arr = data_arr[data.date_start:data.date_end]

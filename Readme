@@ -30,11 +30,11 @@ Version: alpha 1.0
     
     2.2 Adding --ui at the end of the command will open the user interface in which you can directly change the settings of the trend.
     
-    2.3 After running the program, a new file with the trend data will be created in the safe_folder directory.
+    2.3 After running the program, a new file with the trend data will be created in the save_folder directory.
     
     2.4 The "#" before the "inflection_method" and the "inflection_point" can be removed to add an inflection pont in January 2000 using the independent trend method. The method can also be changed to "pwl" by just replacing the "ind" with "pwl".
     
-    2.5 If there is just a need for a specific time frame, remove the "#" before "star_date" and "end_date" to create a trend within this time frame. These can also be used independently.
+    2.5 If there is just a need for a specific time frame, remove the "#" before "start_date" and "end_date" to create a trend within this time frame. These can also be used independently.
     
 
 3. Settings
@@ -57,13 +57,13 @@ Version: alpha 1.0
     
     3.8 end_date = %Y-%m - the date at which the calculation of the trend is supposed to end
     
-    3.9 averaging_window - this option will average the months for a yearly mean. Using "averaging_window = 1, 2, 3" will use the first, second and third month starting from the start date and take the mean of these months. To easily take the mean over the whole year, use "averaging_window = yearly"
+    3.9 averaging_window - this option will average the months for a multi-monthly mean mean. Using "averaging_window = 1, 2, 3" will use the first, second and third month starting from the start date and take the mean of these months. To easily take the mean over the whole year, use "averaging_window = yearly"
     
     3.10 anomaly = True/False - The trend will be calculated using the anomaly
     
-    3.11 anomaly_method = rel/abs - Change if the anomaly trend should be relative or absolute
+    3.11 anomaly_method = rel/abs - Change if the anomaly trend should be relative or in absolute units
     
-    3.12 skip_percentage - If enabled, this will skip calculation of cells if the usable data (not NaNs) falls under this threshold in respect to the complete time series
+    3.12 skip_percentage - If enabled, this will skip calculation of trends if the number of usable data (not NaNs) is below the threshold given by the number of time steps times the skip_percentage
     
     3.13 default_seasonal_component = 1/2/3/4 - Changes the seasonal component of all values to either 1 = annual, 2 = semi-annual, 3 = tri-annual or 4 = quarter-annual
     
@@ -77,11 +77,11 @@ Version: alpha 1.0
     
     3.18 default_proxy_method = 0/1/2/3 - Changes the method how all proxy terms will be used
     
-    3.19 default_proxy_x_method = 0/1/2/3 - Changes the method how one of the default proxies will be used. x can be change to 1 to 8
+    3.19 default_proxy_x_method = 0/1/2/3 - Changes the method how one of the 8 default proxies will be used. x can be changed to 1 to 8
     
     3.20 default_proxy_seasonal = 1/2/3/4 - Same as 3.19 just for the seasonal component
     
-    3.21 additional_proxy_path - the path the an additional ascii proxy file
+    3.21 additional_proxy_path - the path of an additional ascii proxy file
     
     3.22 additional_proxy_time_col - the column which indicates the time for the additional proxy. if the time is seperated into different columns, seperate the column indices with ",". For example "additional_proxy_time_col = 0, 1"
     
@@ -120,7 +120,7 @@ Version: alpha 1.0
         
         5.2.2 "Contact" only prints the contact mail in the console.
         
-        5.2.3 "Diagnostic X" and "Diagnostic Data" are disabled because of the newly added yearly data which did not work properly with these outputs.
+        5.2.3 "Diagnostic X" and "Diagnostic Data" are disabled because the yearly data did not work properly with these outputs.
         
         5.2.4 "Presets" does not change the proxy methods or seasonal components and also does not yet load the additional proxies.
         

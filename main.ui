@@ -949,7 +949,7 @@
           </widget>
           <widget class="QWidget" name="tab_4">
            <attribute name="title">
-            <string>X</string>
+            <string>Independent Variable Matrix</string>
            </attribute>
            <layout class="QVBoxLayout" name="verticalLayout_17">
             <item>
@@ -1052,24 +1052,22 @@
             </spacer>
            </item>
            <item>
-            <widget class="QLabel" name="dim_label">
-             <property name="text">
-              <string>Plot</string>
-             </property>
+            <widget class="QWidget" name="dim_widget" native="true">
+             <layout class="QHBoxLayout" name="horizontalLayout_12">
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+             </layout>
             </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="dim_combo"/>
-           </item>
-           <item>
-            <widget class="QLabel" name="axis_label">
-             <property name="text">
-              <string>Axis:</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="axis_combo"/>
            </item>
           </layout>
          </widget>

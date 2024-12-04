@@ -20,7 +20,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHeaderView, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
 ver = 'alpha 1.1'
@@ -93,24 +93,63 @@ class VariableWindow(QtWidgets.QDialog):
         uic.loadUi('var_naming.ui', self)
 
         self.ini = settings_ini
-        f = nc.Dataset(filename[0], 'r')
-        keys = list(f.variables.keys())
-        keys.insert(0, '-None-')
-        f.close()
+        self.data = nc.Dataset(filename[0], 'r')
+        self.keys = list(self.data.variables.keys())
+        self.keys.insert(0, '-None-')
 
-        self.load_variable_keys(keys)
+        self.load_variable_keys()
+
+        self.dim_layout = self.findChild(QtWidgets.QWidget, 'variable_widget').layout()
+        self.o3_var_combo.currentTextChanged.connect(self.populate_dim_widget)
 
         # connect buttons
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
 
-    def load_variable_keys(self, keys):
-        self.o3_var_combo.addItems(keys)
-        self.time_var_combo.addItems(keys)
-        self.lat_var_combo.addItems(keys)
-        self.lon_var_combo.addItems(keys)
-        self.alt_var_combo.addItems(keys)
-        self.time_var_format.setText(self.ini['time_format'])
+    def clear_dim_widget(self):
+        while self.dim_layout.count():
+            item = self.dim_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def populate_dim_widget(self):
+        self.clear_dim_widget()
+        if self.o3_var_combo.currentIndex() == 0:
+            self.clear_dim_widget()
+            return
+
+        dims = self.data.variables[self.o3_var_combo.currentText()].dimensions
+
+        for k, i in enumerate(dims):
+            dim_index = self.keys.index(i)
+            frame = QtWidgets.QFrame()
+            frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            frame.setFrameShadow(QtWidgets.QFrame.Raised)
+            frame_layout = QVBoxLayout(frame)
+
+            for _ in range(2):
+                row_widget = QtWidgets.QWidget()
+                row_layout = QHBoxLayout(row_widget)
+
+                label = QtWidgets.QLabel(i)
+                row_layout.addWidget(label)
+
+                spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+                row_layout.addItem(spacer)
+
+                combo = QtWidgets.QComboBox()
+                combo.addItems(self.keys)
+                combo.setCurrentIndex(dim_index)
+                row_layout.addWidget(combo)
+
+                frame_layout.addWidget(row_widget)
+
+            self.dim_layout.addWidget(frame)
+
+
+    def load_variable_keys(self):
+        self.o3_var_combo.addItems(self.keys)
 
     def save_settings(self):
         # Saves all settings and closes the settings window
@@ -149,6 +188,11 @@ class VariableWindow(QtWidgets.QDialog):
 
         self.ini_signal.emit(self.ini)
         self.accept()
+
+    def closeEvent(self, event):
+        if self.data is not None:
+            self.data.close()
+        super().closeEvent(event)
 
 
 # The UI and its functions
@@ -213,9 +257,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.compute_button.clicked.connect(self.compute_trends)
 
         # Plotting
-        # self.plot_check.toggled.connect(self.time_series_enable)
-        self.dim_combo.currentTextChanged.connect(self.axis_options)
-        self.axis_combo.activated.connect(self.update_plot_indices)
+        self.dim_layout = self.dim_widget.layout()
+        self.dim_boxes = []
         self.plot_button.clicked.connect(self.plot_figure)
 
         # Layout for plotting
@@ -545,43 +588,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.palette_right.setColor(QPalette.Text, QColor(0, 170, 0))
         self.palette_right.setColor(QPalette.Background, QColor(255, 255, 255, 0))
 
-    def plot_options(self):
-        data = self.list_of_data[self.data_list.currentRow()]
-        self.dim_combo.clear()
-        if self.infl_check.isChecked() == True:
-            dim_num = len(self.trends.shape) - 1
-        else:
-            dim_num = len(self.trends.shape)
-
-        if len(data.o3.shape) == 1:
-            self.dim_combo.setDisabled(True)
-        else:
-            self.dim_combo.setDisabled(False)
-            for k in range(dim_num):
-                self.dim_combo.addItem(data.dim_array[1:][k])
-
-        self.plot_indices = self.plot_indices[:dim_num]
-
-    def update_plot_indices(self):
-        self.plot_indices[self.dim_combo.currentIndex()] = self.axis_combo.currentIndex()
-
-    def axis_options(self):
-        indices = copy.copy(self.plot_indices)
-        self.axis_combo.clear()
-        data = self.list_of_data[self.data_list.currentRow()]
-        combo_int = self.dim_combo.currentIndex()
-        dim = []
-        if data.lat is not None:
-            dim.append(data.lat)
-        if data.lon is not None:
-            dim.append(data.lon)
-        if data.lev is not None:
-            dim.append(data.lev)
-
-        for k, i in enumerate(dim[combo_int]):
-            self.axis_combo.addItem(str(i))
-        self.axis_combo.setCurrentIndex(indices[combo_int])
-
     def inflection_enable(self):
         # Enables/Disables the date entry
         if self.infl_check.isChecked() == True:
@@ -820,23 +826,47 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxy_string = self.diagnostic[4]
         self.time = self.diagnostic[5]
         self.current_ini = copy.copy(self.ini)
-        self.current_data = copy.copy(self.list_of_data[self.data_list.currentRow()])
+        self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
 
         self.plot_button.setDisabled(False)
 
-        # Get roughly the middle index of the variables, so it looks nicer
-        self.plot_indices = np.zeros(len(self.trends.shape), dtype=int)
-        for k, i in enumerate(self.plot_indices):
-            self.plot_indices[k] = int(self.trends.shape[k]/2)
-        self.plot_options()
+        self.clear_dim_widgets()
+        self.populate_dim_widget()
+
+    def clear_dim_widgets(self):
+        while self.dim_layout.count():
+            item = self.dim_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def populate_dim_widget(self):
+        self.dim_boxes.clear()
+
+        for dim_index in range(1, len(self.current_data.o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
+            col_layout.addWidget(label)
+
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.current_data, self.current_data.dim_array[dim_index])
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+
+            self.dim_boxes.append(combo)
+
+            self.dim_layout.addLayout(col_layout)
 
     def plot_figure(self):
         # Clear the figure
         self.canvas.figure.clf()
 
         # Preparing Plot values
-        data = copy.copy(self.current_data)
-        indices = tuple([slice(None)] + list(self.plot_indices))
+        data = copy.deepcopy(self.current_data)
+
+        # Get dimension combo boxes indices
+        plot_indices = [combo.currentIndex() for combo in self.dim_boxes]
+        indices = tuple([slice(None)] + list(plot_indices))
 
         X = data.time
         Y = data.o3[indices]
@@ -854,22 +884,22 @@ class AppWindow(QtWidgets.QMainWindow):
                 Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
 
 
-        Y_trend = self.trends[tuple(self.plot_indices)]
+        Y_trend = self.trends[tuple(plot_indices)]
         if not isinstance(Y_trend, list):
             Y_trend = [Y_trend]
-        Y_signi = self.signi[tuple(self.plot_indices)]
+        Y_signi = self.signi[tuple(plot_indices)]
 
-        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(self.plot_indices)][valid_cols])
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
 
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
         for key, i in str_groups.items():
             if key[1] == 'month-of-the-year':
-                slope_beta.append(np.nanmean(self.betaa[tuple(self.plot_indices)][i], axis=0))
-                slope_X.append([np.nanmax(row[tuple(self.plot_indices)][i]) for row in self.X])
+                slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
+                slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
             else:
-                slope_beta.append(self.betaa[tuple(self.plot_indices)][i[0]])
+                slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
                 slope_X.append(self.X[indices][:, i[0]])
         trend_string = "\n".join([f"trend {i+1}: {v:.2f}%/decade" for i, v in enumerate(Y_trend)])
 
@@ -927,6 +957,7 @@ def load_config_ini(ini_path):
         ini['additional_proxy_time_col'] = np.zeros(add_proxy_count, dtype='object')
         ini['additional_proxy_data_col'] = np.ones(add_proxy_count, dtype=int)
         ini['additional_proxy_method'] = np.ones(add_proxy_count, dtype=int)
+        ini['additional_proxy_tag'] = np.empty(add_proxy_count, dtype='object')
         ini['additional_proxy_comment_symbol'] = np.empty(add_proxy_count, dtype='object')
         ini['additional_proxy_header_size'] = np.empty(add_proxy_count, dtype=int)
         ini['additional_proxy_time_format'] = np.empty(add_proxy_count, dtype='object')
@@ -1055,7 +1086,7 @@ def convert_to_datetime(time, ini=None):
     # Converting every possible time to datetime
     # STILL NEEDS MORE OPTIONS
     if ini is not None:
-        format = ini['time_format']
+        format = ini.get('time_format', '%Y%m')
     else:
         format = '%Y-%m-%d'
     if isinstance(time, np.ndarray):
@@ -1198,6 +1229,7 @@ def load_default_proxies(ini):
 
     # Add the AOD data to the proxy list
     proxy_list.append(aod)
+    proxy_list[-1].tag = 'lat'
 
     if int(ini.get('default_proxy_limit', 0)) == 1:
         proxy_list = default_boundary_settings(proxy_list)
@@ -1259,6 +1291,7 @@ def load_additional_proxies(proxies, ini):
         else:
             add_proxies[k].time = pd.Series(proxy_data.index).apply(lambda dt: dt.replace(day=15))
         add_proxies[k].method = ini['additional_proxy_method'][k]
+        add_proxies[k].tag = ini['additional_proxy_tag'][k]
         add_proxies[k].source = [i, int(ini['additional_proxy_data_col'][k])-1]
 
     proxies = proxies + add_proxies
@@ -1276,7 +1309,7 @@ def predict_alt_unit(alt):
         return 'hPa'
 
 
-def load_netCDF(filename, ini):
+def load_netCDF_OLD(filename, ini):
     try:
         dataset = nc.Dataset(filename, 'r')
 
@@ -1324,6 +1357,51 @@ def load_netCDF(filename, ini):
         data.dim_array = dim_array
         data.time = convert_to_datetime(data.time, ini)
         data.time_format = ini['time_format']
+
+        dataset.close()
+        return data
+
+    except Exception as e:
+        print('Error loading NetCDF file:', e)
+        return None
+
+
+def load_netCDF(filename, ini):
+    try:
+        dataset = nc.Dataset(filename, 'r')
+
+        group_name = ini.get('group_name')
+        group = dataset[group_name] if group_name else dataset
+
+        # Create a dataset class
+        try:
+            data = Dataset(filename.split('/')[-1].split('.')[0])
+        except:
+            data = Dataset('New Dataset')
+
+        # Getting the ozone data from the netCDF file
+        try:
+            setattr(data, 'o3', group.variables[ini.get('o3_var')][:])
+        except:
+            raise Exception('Loading the variable names from the netCDF file was not successful.')
+
+        # Getting the variables that the ozone data depends on with either the exact variable names or the ones provided by the user (e.g. "time" to "date" or something similar)
+        dependencies = group.variables[ini['o3_var']].dimensions
+        for k, i in enumerate(dependencies):
+            if k == int(ini.get('time_dim', 1)) - 1:
+                setattr(data, 'time', group.variables[ini.get('time_var', 'time')][:])
+            else:
+                setattr(data, i, group.variables[ini.get('additional_var_' + str(k + 1) + '_index', i)][:])
+                setattr(data, i + '_unit', ini.get('additional_var_' + str(k + 1) + '_unit', ''))
+                setattr(data, i + '_tag', ini.get('additional_var_' + str(k + 1) + '_tag', ''))
+
+        new_order = [int(ini.get('date_dim', 1)) - 1] + [i for i in range(len(dependencies)) if i != int(ini.get('date_dim', 1)) - 1]
+
+        data.o3 = np.transpose(data.o3, axes=new_order)
+        data.o3 = np.ma.masked_invalid(data.o3)
+        data.dim_array = [dependencies[i] for i in new_order]
+        data.time = convert_to_datetime(data.time, ini)
+        data.time_format = ini.get('time_format', '%Y%m')
 
         dataset.close()
         return data
@@ -1582,7 +1660,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
     return X_1
 
 
-def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
+def get_X_2_OLD(proxies, nanmask, X_proxy_size, ini, it, data):
     mask_time = np.where(nanmask == True)[0]    # Array which has every index of actual values of the original data
     X_2 = np.zeros((len(nanmask), X_proxy_size), dtype=float)  # Size of the proxy part of the X matrices depends on which method to use for each proxy as well as the seasonal cycle
     X_2[:] = np.nan
@@ -1669,7 +1747,76 @@ def get_X_2(proxies, nanmask, X_proxy_size, ini, it, data):
                 col += 1
 
     # Removing all columns with only NaNs (columns that got skipped because of limitations)
-    # X_2 = X_2[:, ~np.all(np.isnan(X_2), axis=0)]
+    X_2[~nanmask] = np.nan
+
+    return X_2
+
+
+def get_X_2(proxies, nanmask, X_proxy_size, it, data):
+    mask_time = np.where(nanmask == True)[0]    # Array which has every index of actual values of the original data
+    X_2 = np.zeros((len(nanmask), X_proxy_size), dtype=float)  # Size of the proxy part of the X matrices depends on which method to use for each proxy as well as the seasonal cycle
+    X_2[:] = np.nan
+
+    col = 0
+
+    # Setting columns as NaNs if they don't fall inbetween the min and max lat and alt specifications of the proxy
+    for i in proxies:
+        if i.method == 0:
+            continue
+        # if not is_between(lat, i.lat_min, i.lat_max) or not is_between(alt, i.alt_min, i.alt_max):
+        #     if i.method == 1:
+        #         X_2[:, col] = np.nan
+        #         col += 1
+        #     elif i.method == 2:
+        #         for kk in range(i.seas_comp*2 + 1):
+        #             X_2[:, col] = np.nan
+        #             col += 1
+        #     elif i.method == 3:
+        #         for kk in range(12):
+        #             X_2[:, col] = np.nan
+        #             col += 1
+        #     continue
+
+        # Get the proxy data that correlates to the current data, depending on the tags of the proxy data (e.g. the specific latitude band will be looked at for AOD or an interpolation will be done
+        if len(i.data.shape) > 1:
+            for kk, ii in enumerate(data.dim_array[1:]):
+                if getattr(data, ii + '_tag') == i.tag:
+                    tag = ii
+                    tag_val = getattr(data, ii)[it.multi_index[kk]]
+            if tag_val in getattr(i, tag):
+                proxy_data = i.data[nanmask, np.where(getattr(i, tag) == tag_val)]
+            else:
+                closest_val = sorted([(val_close, abs(val_close - tag_val)) for val_close in getattr(i, tag)], key=lambda x: x[1:])[:2]
+                val1, val2 = closest_val[0][0], closest_val[1][0]
+                data1, data2 = i.data[nanmask, np.where(getattr(i, tag) == val1)[0][0]], i.data[nanmask, np.where(getattr(i, tag) == val2)[0][0]]
+                temp_data = np.empty(len(data1))
+                for kk, ii in enumerate(data1):
+                    temp_data[kk] = np.interp(tag_val, [val1, val2], [data1[kk], data2[kk]])
+                proxy_data = temp_data
+        else:
+            proxy_data = i.data[nanmask]
+
+        if i.method == 0:
+            continue
+        elif i.method == 1:
+            X_2[nanmask, col] = proxy_data
+            col += 1
+        elif i.method == 2:
+            X_2[nanmask, col] = proxy_data
+            col += 1
+            for kk in range(int(i.seas_comp)):
+                X_2[nanmask, col] = proxy_data * np.sin(((kk + 1) * 2 * np.pi * mask_time)/12)
+                col += 1
+                X_2[nanmask, col] = proxy_data * np.cos(((kk + 1) * 2 * np.pi * mask_time)/12)
+                col += 1
+        elif i.method == 3:
+            month_array = np.array(pd.to_datetime(data.time[data.date_start:data.date_end]).month)
+            for kk in range(12):
+                X_2[nanmask, col] = proxy_data
+                X_2[np.where((month_array % 13) != kk+1), col] = 0
+                col += 1
+
+    # Removing all columns with only NaNs (columns that got skipped because of limitations)
     X_2[~nanmask] = np.nan
 
     return X_2
@@ -1961,7 +2108,7 @@ def iup_reg_model(data, proxies, ini):
             continue
 
         X_1 = get_X_1(nanmask, ini, X_1_string, data)
-        X_2 = get_X_2(proxies, nanmask, X_proxy_size, ini, it, data)
+        X_2 = get_X_2(proxies, nanmask, X_proxy_size, it, data)
 
         X = np.concatenate([X_1, X_2], axis=1)
         X[:, np.all(X[nanmask] == 0, axis=0)] = np.nan
@@ -1989,7 +2136,7 @@ def iup_reg_model(data, proxies, ini):
 
         # Go to next iteration:
         it.iternext()
-    diagnostic = [X_all, beta_all, betaa_all, np.nan, X_string, data.time[data.date_start:data.date_end][time_log]]
+    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[data.date_start:data.date_end][time_log]]
 
     return trenda_z, siga_z, diagnostic
 
@@ -2044,4 +2191,4 @@ def iup_ui(ui=False):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

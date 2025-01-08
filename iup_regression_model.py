@@ -19,11 +19,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.1'
+ver = 'alpha 1.2'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -85,26 +85,56 @@ class MplCanvas(FigureCanvas):
         self.axes_list = []
 
 
+class PreviewWindow(QtWidgets.QDialog):
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        # super(PreviewWindow, self).__init__()
+        uic.loadUi('preview_table.ui', self)
+
+        self.activateWindow()
+        self.raise_()
+
+        self.fill_table(data)
+
+        self.btn_exit.clicked.connect(self.close)
+
+    def fill_table(self, data):
+        print(data.shape)
+        self.preview_table.setRowCount(data.shape[0])
+        self.preview_table.setColumnCount(data.shape[1] if data.shape[1] else 0)
+
+        for row_idx, row_data in enumerate(data):
+            for col_idx, value in enumerate(row_data):
+                self.preview_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+
+
+
 # Popup window to set the variable names to load data
 class VariableWindow(QtWidgets.QDialog):
     ini_signal = pyqtSignal(dict)
     def __init__(self, settings_ini, filename):
         super(VariableWindow, self).__init__()
-        uic.loadUi('var_naming.ui', self)
+        uic.loadUi('data_load.ui', self)
 
         self.ini = settings_ini
         self.data = nc.Dataset(filename[0], 'r')
-        self.keys = list(self.data.variables.keys())
-        self.keys.insert(0, '-None-')
 
         self.load_variable_keys()
 
-        self.dim_layout = self.findChild(QtWidgets.QWidget, 'variable_widget').layout()
+        self.dim_layout = self.findChild(QtWidgets.QWidget, 'variable_stacked_widget').layout()
         self.o3_var_combo.currentTextChanged.connect(self.populate_dim_widget)
+        self.variable_bttn.clicked.connect(self.show_options)
 
         # connect buttons
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
+
+    def show_options(self):
+        current_index = self.variable_widget.currentIndex()
+        if current_index == 0:
+            self.variable_widget.setCurrentIndex(1)
+        else:
+            self.variable_widget.setCurrentIndex(0)
 
     def clear_dim_widget(self):
         while self.dim_layout.count():
@@ -121,39 +151,89 @@ class VariableWindow(QtWidgets.QDialog):
 
         dims = self.data.variables[self.o3_var_combo.currentText()].dimensions
 
+        self.combo_boxes = []
+        self.line_edits = []
         for k, i in enumerate(dims):
-            dim_index = self.keys.index(i)
+            try:
+                dim_index = self.o3_keys.index(i)
+            except:
+                dim_index = 0
             frame = QtWidgets.QFrame()
             frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
             frame.setFrameShadow(QtWidgets.QFrame.Raised)
             frame_layout = QVBoxLayout(frame)
 
-            for _ in range(2):
-                row_widget = QtWidgets.QWidget()
-                row_layout = QHBoxLayout(row_widget)
+            # Add widget with variable input
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel(i + ' variable: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            combo = QtWidgets.QComboBox()
+            combo.addItems(self.o3_keys)
+            combo.currentIndexChanged.connect(self.update_OK)
+            combo.setCurrentIndex(dim_index)
+            self.combo_boxes.append(combo)
+            row_layout.addWidget(combo)
+            frame_layout.addWidget(row_widget)
 
-                label = QtWidgets.QLabel(i)
-                row_layout.addWidget(label)
+            # Add widget with tag input
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel(i + ' tag: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            line = QtWidgets.QLineEdit()
+            row_layout.addWidget(line)
+            frame_layout.addWidget(row_widget)
 
-                spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-                row_layout.addItem(spacer)
-
-                combo = QtWidgets.QComboBox()
-                combo.addItems(self.keys)
-                combo.setCurrentIndex(dim_index)
-                row_layout.addWidget(combo)
-
-                frame_layout.addWidget(row_widget)
-
+            match_key = [key for key in self.ini if 'tag_name_' in key]
+            for ii in match_key:
+                if i in [s.strip() for s in self.ini[ii].split(',')]:
+                    line.setText(ii.split('_')[-1])
+                    if ii.split('_')[-1] == 'time':
+                        row_widget = QtWidgets.QWidget()
+                        row_layout = QHBoxLayout(row_widget)
+                        label = QtWidgets.QLabel('Time format: ')
+                        row_layout.addWidget(label)
+                        spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+                        row_layout.addItem(spacer)
+                        line_time = QtWidgets.QLineEdit()
+                        line_time.setText('%Y/%m')
+                        row_layout.addWidget(line_time)
+                        frame_layout.addWidget(row_widget)
+            line.textChanged.connect(self.tag_change)
             self.dim_layout.addWidget(frame)
 
-
     def load_variable_keys(self):
-        self.o3_var_combo.addItems(self.keys)
+        self.o3_keys = list(self.data.variables.keys())
+        self.o3_keys.insert(0, '-None-')
+        self.o3_var_combo.addItems(self.o3_keys)
+
+    def update_OK(self):
+        self.bttn_ok.setEnabled(not any(combo.currentIndex() == 0 for combo in self.combo_boxes))
+
+    def tag_change(self):
+        line_text = self.sender().text()
+        if line_text == 'time':
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel('Time format: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            line = QtWidgets.QLineEdit()
+            line.setText('%Y/%m')
+            row_layout.addWidget(line)
+            self.sender().parent().parent().layout().addWidget(row_widget)
+        else:
+            if self.sender().parent().parent().layout().itemAt(2):
+                self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(2).widget())
 
     def save_settings(self):
         # Saves all settings and closes the settings window
-        # print(self.proxy_header.text() == '')
 
         # Change ini
         if self.o3_var_combo.currentIndex() != 0:
@@ -161,30 +241,17 @@ class VariableWindow(QtWidgets.QDialog):
         else:
             self.ini['o3_var'] = None
 
-        if self.lat_var_combo.currentIndex() != 0:
-            self.ini['lat_var'] = self.lat_var_combo.currentText()
-        else:
-            self.ini['lat_var'] = None
+        for i in range(self.dim_layout.count()):
+            combo_text = self.dim_layout.itemAt(i).widget().layout().itemAt(0).widget().layout().itemAt(2).widget().currentText()
+            line_text = self.dim_layout.itemAt(i).widget().layout().itemAt(1).widget().layout().itemAt(2).widget().text()
 
-        if self.lon_var_combo.currentIndex() != 0:
-            self.ini['lon_var'] = self.lon_var_combo.currentText()
-        else:
-            self.ini['lon_var'] = None
-
-        if self.alt_var_combo.currentIndex() != 0:
-            self.ini['lev_var'] = self.alt_var_combo.currentText()
-        else:
-            self.ini['lev_var'] = None
-
-        if self.time_var_combo.currentIndex() != 0:
-            self.ini['time_var'] = self.time_var_combo.currentText()
-        else:
-            self.ini['time_var'] = None
-
-        if self.time_var_format != '':
-            self.ini['time_format'] = self.time_var_format.text()
-        else:
-            self.ini['time_format'] = None
+            if line_text == 'time':
+                self.ini['time_var'] = combo_text
+                self.ini['time_dim'] = i + 1
+                self.ini['time_format'] = self.dim_layout.itemAt(i).widget().layout().itemAt(2).widget().layout().itemAt(2).widget().text()
+            else:
+                self.ini['additional_var_' + str(i + 1) + '_index'] = combo_text
+                self.ini['additional_var_' + str(i + 1) + '_tag'] = line_text
 
         self.ini_signal.emit(self.ini)
         self.accept()
@@ -193,6 +260,214 @@ class VariableWindow(QtWidgets.QDialog):
         if self.data is not None:
             self.data.close()
         super().closeEvent(event)
+
+
+class ProxyWindow(QtWidgets.QDialog):
+    ini_signal = pyqtSignal(dict)
+    def __init__(self, settings_ini, filename):
+        super(ProxyWindow, self).__init__()
+        uic.loadUi('proxy_load.ui', self)
+        self.ini = settings_ini
+        self.file = filename[0]
+
+        # Distinguish between ascii file and netCDF file
+        if self.file.endswith('.nc'):
+            self.proxy_widget.setCurrentIndex(0)
+            self.data = nc.Dataset(self.file, 'r')
+            self.load_nc_file()
+            self.dim_layout = self.findChild(QtWidgets.QWidget, 'variable_stacked_widget').layout()
+            self.proxy_var_combo.currentTextChanged.connect(self.populate_dim_widget)
+            self.variable_bttn.clicked.connect(self.show_options)
+        else:
+            self.proxy_widget.setCurrentIndex(1)
+            self.btn_preview.clicked.connect(self.open_preview)
+            self.is2d_check.toggled.connect(self.toggle_2d)
+            self.bttn_ok.setEnabled(True)
+
+        # connect buttons
+        self.bttn_ok.clicked.connect(self.save_settings)
+        self.bttn_cancel.clicked.connect(self.close)
+
+        if not self.ini.get('additional_proxy_path'):
+            self.create_add_proxy_list()
+
+
+    def show_options(self):
+        current_index = self.variable_widget.currentIndex()
+        if current_index == 0:
+            self.variable_widget.setCurrentIndex(1)
+        else:
+            self.variable_widget.setCurrentIndex(0)
+
+    def create_add_proxy_list(self):
+        self.ini['additional_proxy_path'] = []
+        self.ini['additional_proxy_time_col'] = []
+        self.ini['additional_proxy_data_col'] = []
+        self.ini['additional_proxy_method'] = []
+        self.ini['additional_proxy_seas_comp'] = []
+        self.ini['additional_proxy_time_format'] = []
+        self.ini['additional_proxy_header_size'] = []
+        self.ini['additional_proxy_tag'] = []
+        self.ini['additional_proxy_tag_array'] = []
+
+    def toggle_2d(self):
+        if self.is2d_check.isChecked() == True:
+            self.tag_widget_1.setEnabled(True)
+            self.tag_widget_2.setEnabled(True)
+        else:
+            self.tag_widget_1.setEnabled(False)
+            self.tag_widget_2.setEnabled(False)
+
+    def clear_dim_widget(self):
+        while self.dim_layout.count():
+            item = self.dim_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def populate_dim_widget(self):
+        self.clear_dim_widget()
+        if self.proxy_var_combo.currentIndex() == 0:
+            self.clear_dim_widget()
+            return
+
+        dims = self.data.variables[self.proxy_var_combo.currentText()].dimensions
+
+        self.combo_boxes = []
+        self.line_edits = []
+        for k, i in enumerate(dims):
+            try:
+                dim_index = self.keys.index(i)
+            except:
+                dim_index = 0
+            frame = QtWidgets.QFrame()
+            frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+            frame.setFrameShadow(QtWidgets.QFrame.Raised)
+            frame_layout = QVBoxLayout(frame)
+
+            # Add widget with variable input
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel(i + ' variable: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            combo = QtWidgets.QComboBox()
+            combo.addItems(self.keys)
+            combo.currentIndexChanged.connect(self.update_OK)
+            combo.setCurrentIndex(dim_index)
+            self.combo_boxes.append(combo)
+            row_layout.addWidget(combo)
+            frame_layout.addWidget(row_widget)
+
+            # Add widget with tag input
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel(i + ' tag: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            line = QtWidgets.QLineEdit()
+            row_layout.addWidget(line)
+            frame_layout.addWidget(row_widget)
+
+            match_key = [key for key in self.ini if 'tag_name_' in key]
+            for ii in match_key:
+                if i in [s.strip() for s in self.ini[ii].split(',')]:
+                    line.setText(ii.split('_')[-1])
+                    if ii.split('_')[-1] == 'time':
+                        row_widget = QtWidgets.QWidget()
+                        row_layout = QHBoxLayout(row_widget)
+                        label = QtWidgets.QLabel('Time format: ')
+                        row_layout.addWidget(label)
+                        spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+                        row_layout.addItem(spacer)
+                        line_time = QtWidgets.QLineEdit()
+                        line_time.setText('%Y/%m')
+                        row_layout.addWidget(line_time)
+                        frame_layout.addWidget(row_widget)
+            line.textChanged.connect(self.tag_change)
+            self.dim_layout.addWidget(frame)
+
+    def load_nc_file(self):
+        self.keys = list(self.data.variables.keys())
+        self.keys.insert(0, '-None-')
+        self.proxy_var_combo.addItems(self.keys)
+
+    def open_preview(self):
+        proxy_raw = pd.read_csv(self.file, sep='\s+', header=None, skiprows=int(self.header_rows.text()))
+        proxy_raw.dropna(axis=1, how='all', inplace=True)
+        try:
+            proxy_raw = pd.read_csv(self.file, sep='\s+', header=None, skiprows=int(self.header_rows.text()))
+            proxy_raw.dropna(axis=1, how='all', inplace=True)
+        except:
+            print('Could not load the proxy data. Please try changing the header rows.')
+            return
+
+        self.preview_window = PreviewWindow(np.array(proxy_raw))
+        self.preview_window.show()
+
+    def update_OK(self):
+        self.bttn_ok.setEnabled(not any(combo.currentIndex() == 0 for combo in self.combo_boxes))
+
+    def tag_change(self):
+        line_text = self.sender().text()
+        if line_text == 'time':
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel('Time format: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            line = QtWidgets.QLineEdit()
+            line.setText('%Y/%m')
+            row_layout.addWidget(line)
+            self.sender().parent().parent().layout().addWidget(row_widget)
+        else:
+            if self.sender().parent().parent().layout().itemAt(2):
+                self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(2).widget())
+
+    def save_settings(self):
+        # Saves all settings and closes the settings window
+
+        # Save depending on current open page
+
+        self.ini['additional_proxy_path'].append(self.file)
+        if self.proxy_widget.currentIndex() == 0:
+            for widget in self.variable_stacked_widget.children():
+                if isinstance(widget, QtWidgets.QFrame):
+                    if widget.layout().itemAt(1).widget().layout().itemAt(2).widget().text() == 'time':
+                        self.ini['additional_proxy_time_col'].append(widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
+                        self.ini['additional_proxy_time_format'].append(widget.layout().itemAt(2).widget().layout().itemAt(2).widget().text())
+                    else:
+                        self.ini['additional_proxy_tag_array'].append(widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
+                        self.ini['additional_proxy_tag'].append(widget.layout().itemAt(1).widget().layout().itemAt(2).widget().text())
+            self.ini['additional_proxy_data_col'].append(self.proxy_var_combo.currentText())
+            self.ini['additional_proxy_method'].append(self.ini.get('default_proxy_method', 1))
+            self.ini['additional_proxy_seas_comp'].append(self.ini.get('intercept_method', 2))
+            self.ini['additional_proxy_header_size'].append(0)
+        else:
+            self.ini['additional_proxy_time_col'].append(self.proxy_time.text())
+            if self.is2d_check.isChecked():
+                self.ini['additional_proxy_tag_array'].append(self.tag_values.text())
+                self.ini['additional_proxy_tag'].append(self.tag.text())
+            else:
+                self.ini['additional_proxy_tag_array'].append(False)
+                self.ini['additional_proxy_tag'].append(False)
+            self.ini['additional_proxy_data_col'].append(self.proxy_data.text())
+            self.ini['additional_proxy_method'].append(self.ini.get('default_proxy_method', 1))
+            self.ini['additional_proxy_seas_comp'].append(self.ini.get('intercept_method', 2))
+            self.ini['additional_proxy_header_size'].append(self.header_rows.text())
+            self.ini['additional_proxy_time_format'].append('%Y%m')
+
+        self.ini_signal.emit(self.ini)
+        self.accept()
+
+    def closeEvent(self, event):
+        if self.data is not None:
+            self.data.close()
+        super().closeEvent(event)
+
 
 
 # The UI and its functions
@@ -220,15 +495,15 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxies = load_additional_proxies(self.proxies, self.ini)
         self.infl_method_list = ['ind', 'pwl']
 
+        # Fill lists with proxies and data
+        self.update_trend_table()
+        self.update_proxy_table()
+
         # Create important variables
         self.X = None
         self.beta = None
         self.betaa = None
         self.time = None
-
-        # Fill lists with proxies and data
-        # Proxies
-        self.update_proxy_table()
 
         self.define_palettes()
 
@@ -239,11 +514,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.inflection_point.textChanged.connect(self.format_check)
         self.inflection_method.currentIndexChanged.connect(self.inflection_method_change)
         self.all_proxy_method.currentIndexChanged.connect(self.all_proxy_method_change)
-        self.intercept_method_combo.currentIndexChanged.connect(self.update_intercept_method)
-        self.trend_method_combo.currentIndexChanged.connect(self.update_trend_method)
         self.mean_line.textChanged.connect(self.text_check)
-        self.trend_seas_combo.currentIndexChanged.connect(self.update_trend_seasonal)
-        self.intercept_seas_combo.currentIndexChanged.connect(self.update_intercept_seasonal)
         self.anomaly_check.toggled.connect(self.anomaly_enable)
         self.radio_rel.toggled.connect(self.anomaly_method_toggle)
         self.radio_abs.toggled.connect(self.anomaly_method_toggle)
@@ -272,11 +543,11 @@ class AppWindow(QtWidgets.QMainWindow):
         self.menu_load_proxy.triggered.connect(self.open_proxy_dialog)
         self.menu_save.triggered.connect(self.save_file)
 
-        self.trend_seas_combo.setCurrentIndex(int(self.ini.get('trend_seasonal_component', self.ini.get('default_seasonal_component', 2))) - 1)
-        self.intercept_seas_combo.setCurrentIndex(int(self.ini.get('intercept_seasonal_component', self.ini.get('default_seasonal_component', 2))) - 1)
+        self.frozen_list.horizontalHeader().sectionResized.connect(self.sync_frozen_to_main)
 
         # Load ini settings and input the data into the UI
         self.load_ini_settings()
+        QTimer.singleShot(0, self.sync_tables)
 
     def load_ini_settings(self):
 
@@ -302,23 +573,8 @@ class AppWindow(QtWidgets.QMainWindow):
         else:
             self.end_date.setText('YYYY-MM')
 
-        if 'trend_method' in self.ini:
-            self.trend_method_combo.setCurrentIndex(int(self.ini['trend_method']))
-        else:
-            self.trend_method_combo.setCurrentIndex(1)
-        if int(self.intercept_method_combo.currentIndex()) == 2:
-            self.intercept_seas_combo.setDisabled(False)
-        else:
-            self.intercept_seas_combo.setDisabled(True)
-
-        if 'intercept_method' in self.ini:
-            self.intercept_method_combo.setCurrentIndex(int(self.ini['intercept_method']))
-        else:
-            self.intercept_method_combo.setCurrentIndex(1)
-        if int(self.intercept_method_combo.currentIndex()) == 2:
-            self.intercept_seas_combo.setDisabled(False)
-        else:
-            self.intercept_seas_combo.setDisabled(True)
+        self.frozen_list.cellWidget(0, 1).setCurrentIndex(int(self.ini.get('trend_method', self.ini.get('default_method', 1))))
+        self.frozen_list.cellWidget(1, 1).setCurrentIndex(int(self.ini.get('intercept_method', self.ini.get('default_method', 1))))
 
         self.mean_line.setText(self.ini.get('averaging_window', ''))
 
@@ -494,6 +750,44 @@ class AppWindow(QtWidgets.QMainWindow):
                 for kk in range(sec_dim):
                     self.dia_proxy_table.setItem(k, kk, QTableWidgetItem(str(self.proxies[index].data[k, kk])))
 
+    def update_trend_table(self):
+        # Update of the frozen table
+        self.frozen_list.setRowCount(2)
+        # Add method combo boxes for trend and intercept
+        self.frozen_list.setItem(0, 0, QTableWidgetItem('Trend'))
+        methodBox = ComboMethod(self)
+        self.frozen_list.setCellWidget(0, 1, methodBox)
+        methodBox.currentIndexChanged.connect(lambda index, methodBox=methodBox, row=0: self.method_update(methodBox, row))
+        methodBox.setCurrentIndex(int(self.ini.get('trend_method', 1)))
+
+        self.frozen_list.setItem(1, 0, QTableWidgetItem('Intercept'))
+        methodBox = ComboMethod(self)
+        self.frozen_list.setCellWidget(1, 1, methodBox)
+        methodBox.currentIndexChanged.connect(lambda index, methodBox=methodBox, row=1: self.method_update(methodBox, row))
+        methodBox.setCurrentIndex(int(self.ini.get('intercept_method', 1)))
+
+        # Add seasonal component combo boxes for trend and intercept
+        seasBox = ComboSeasonal(self)
+        self.frozen_list.setCellWidget(0, 2, seasBox)
+        seasBox.currentIndexChanged.connect(lambda index, seasBox=seasBox, row=0: self.seas_update(seasBox, row))
+        seasBox.setCurrentIndex(int(self.ini.get('trend_seasonal_component', self.ini.get('default_seasonal_component', 2))) - 1)
+        if self.frozen_list.cellWidget(0, 1).currentIndex() != 2:
+            seasBox.setDisabled(True)
+
+        seasBox = ComboSeasonal(self)
+        self.frozen_list.setCellWidget(1, 2, seasBox)
+        seasBox.currentIndexChanged.connect(lambda index, seasBox=seasBox, row=1: self.seas_update(seasBox, row))
+        seasBox.setCurrentIndex(int(self.ini.get('intercept_seasonal_component', self.ini.get('intercept_seasonal_component', 2))) - 1)
+        if self.frozen_list.cellWidget(1, 1).currentIndex() != 2:
+            seasBox.setDisabled(True)
+        self.frozen_list.setHorizontalHeaderLabels(["Variable", "Method", "Seasonal Component"])
+
+        total_height = sum(self.frozen_list.rowHeight(row) for row in range(self.frozen_list.rowCount()))
+        total_height += self.frozen_list.horizontalHeader().height()  # Add header height
+        self.frozen_list.setFixedHeight(total_height)
+
+        self.frozen_list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
     def update_proxy_table(self):
         # Update of the main proxy table
         self.proxy_list.setRowCount(len(self.proxies))
@@ -503,11 +797,11 @@ class AppWindow(QtWidgets.QMainWindow):
             methodBox = ComboMethod(self)
             self.proxy_list.setCellWidget(k, 1, methodBox)
             methodBox.currentIndexChanged.connect(lambda index, methodBox=methodBox, row=k: self.method_update(methodBox, row))
-            methodBox.setCurrentIndex(i.method)
+            methodBox.setCurrentIndex(int(i.method))
 
         # Add seasonal component combo boxes for each available proxy
         for k, i in enumerate(self.proxies):
-            self.proxy_list.setItem(k, 0, QTableWidgetItem(i.name))
+            # self.proxy_list.setItem(k, 0, QTableWidgetItem(i.name))
             seasBox = ComboSeasonal(self)
             self.proxy_list.setCellWidget(k, 2, seasBox)
             seasBox.currentIndexChanged.connect(lambda index, seasBox=seasBox, row=k: self.seas_update(seasBox, row))
@@ -523,6 +817,16 @@ class AppWindow(QtWidgets.QMainWindow):
             self.dia_proxy_combo.addItem(i.name)
         self.proxy_diagnostic(0)
 
+    def sync_tables(self):
+        for col in range(self.proxy_list.columnCount()):
+            self.frozen_list.horizontalHeader().resizeSection(col, self.proxy_list.horizontalHeader().sectionSize(col))
+        self.proxy_list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        for col in range(self.proxy_list.columnCount()):
+            self.proxy_list.horizontalHeader().resizeSection(col, self.frozen_list.horizontalHeader().sectionSize(col))
+
+    def sync_frozen_to_main(self, logical_index, old_size, new_size):
+        self.proxy_list.horizontalHeader().resizeSection(logical_index, new_size)
+
     def open_data_dialog(self):
         dialog = QFileDialog(self)
         dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
@@ -534,7 +838,7 @@ class AppWindow(QtWidgets.QMainWindow):
         else:
             return
 
-        self.open_settings_dialog(fileName)
+        self.open_data_settings_dialog(fileName)
 
         for i in fileName:
             data = load_netCDF(i, self.ini)
@@ -542,7 +846,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 continue
             else:
                 self.list_of_data.append(data)
-
         self.reload_data_list()
 
     def open_proxy_dialog(self):
@@ -555,19 +858,29 @@ class AppWindow(QtWidgets.QMainWindow):
             fileName = dialog.selectedFiles()
         else:
             return
-        print(fileName)
+
+        self.open_proxy_settings_dialog(fileName)
 
         for k, i in enumerate(fileName):
-            new_proxy = load_proxy_file(i, self.ini)
-            self.proxies.append(new_proxy)
+            new_proxy = load_add_proxy_file(self.ini, -1)
+            if new_proxy == None:
+                continue
+            else:
+                self.proxies.append(new_proxy)
 
         self.update_proxy_table()
 
-    def open_settings_dialog(self, filename):
-        settings = VariableWindow(self.ini, filename)
-        settings.ini_signal.connect(self.update_ini_settings)
-        settings.setWindowTitle('Variable Settings')
-        settings.exec_()
+    def open_data_settings_dialog(self, filename):
+        var_window = VariableWindow(self.ini, filename)
+        var_window.ini_signal.connect(self.update_ini_settings)
+        var_window.setWindowTitle('Variable Settings')
+        var_window.exec_()
+
+    def open_proxy_settings_dialog(self, filename):
+        proxy_window = ProxyWindow(self.ini, filename)
+        proxy_window.ini_signal.connect(self.update_ini_settings)
+        proxy_window.setWindowTitle('Proxy Settings')
+        proxy_window.exec_()
 
     def update_ini_settings(self, ini):
         self.ini = ini
@@ -657,38 +970,32 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + 'all' + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
 
     def method_update(self, methodBox, row):
-        self.proxies[row].method = int(methodBox.currentIndex())
-        if int(methodBox.currentIndex()) > int(self.intercept_method_combo.currentIndex()):
-            self.intercept_method_combo.setCurrentIndex(int(methodBox.currentIndex()))
+        table = self.sender().parent().parent()
+        if table.objectName() != 'frozen_list':
+            self.proxies[row].method = int(methodBox.currentIndex())
+            if int(methodBox.currentIndex()) > int(self.frozen_list.cellWidget(1, 1).currentIndex()):
+                self.frozen_list.cellWidget(1, 1).setCurrentIndex(int(methodBox.currentIndex()))
+        else:
+            if table.indexAt(methodBox.pos()).row() == 0:
+                self.ini['trend_method'] = int(methodBox.currentIndex())
+            elif table.indexAt(methodBox.pos()).row() == 1:
+                self.ini['intercept_method'] = int(methodBox.currentIndex())
 
-        if self.proxy_list.cellWidget(row, 2) is not None:
+        if table.cellWidget(row, 2) is not None:
             if int(methodBox.currentIndex()) == 2:
-                self.proxy_list.cellWidget(row, 2).setEnabled(True)
+                table.cellWidget(row, 2).setEnabled(True)
             else:
-                self.proxy_list.cellWidget(row, 2).setEnabled(False)
+                table.cellWidget(row, 2).setEnabled(False)
 
     def seas_update(self, seasBox, row):
-        self.proxies[row].seas_comp = seasBox.currentIndex() + 1
-
-    def update_trend_method(self):
-        self.ini['trend_method'] = int(self.trend_method_combo.currentIndex())
-        if int(self.trend_method_combo.currentIndex()) == 2:
-            self.trend_seas_combo.setDisabled(False)
+        table = self.sender().parent().parent()
+        if table.objectName() != 'frozen_list':
+            self.proxies[row].seas_comp = seasBox.currentIndex() + 1
         else:
-            self.trend_seas_combo.setDisabled(True)
-
-    def update_trend_seasonal(self):
-        self.ini['trend_seasonal_component'] = int(self.trend_seas_combo.currentIndex()) + 1
-
-    def update_intercept_seasonal(self):
-        self.ini['intercept_seasonal_component'] = int(self.intercept_seas_combo.currentIndex()) + 1
-
-    def update_intercept_method(self):
-        self.ini['intercept_method'] = int(self.intercept_method_combo.currentIndex())
-        if int(self.intercept_method_combo.currentIndex()) == 2:
-            self.intercept_seas_combo.setDisabled(False)
-        else:
-            self.intercept_seas_combo.setDisabled(True)
+            if table.indexAt(seasBox.pos()).row() == 0:
+                self.ini['trend_seasonal_component'] = seasBox.currentIndex() + 1
+            elif table.indexAt(seasBox.pos()).row() == 1:
+                self.ini['intercept_seasonal_component'] = seasBox.currentIndex() + 1
 
     def load_presets(self):
         self.preset_list = ['-None-']
@@ -815,6 +1122,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
 
     def compute_trends(self):
+        print(self.ini)
         self.setDisabled(True)
         self.trends, self.signi, self.diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
         self.setDisabled(False)
@@ -830,15 +1138,20 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.plot_button.setDisabled(False)
 
-        self.clear_dim_widgets()
+        self.clear_dim_widgets(self.dim_layout)
         self.populate_dim_widget()
 
-    def clear_dim_widgets(self):
-        while self.dim_layout.count():
-            item = self.dim_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def clear_dim_widgets(self, layout):
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                else:
+                    child_layout = item.layout()
+                    if child_layout is not None:
+                        self.clear_dim_widgets(child_layout)
 
     def populate_dim_widget(self):
         self.dim_boxes.clear()
@@ -883,9 +1196,8 @@ class AppWindow(QtWidgets.QMainWindow):
             for k in range(12):
                 Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
 
-
         Y_trend = self.trends[tuple(plot_indices)]
-        if not isinstance(Y_trend, list):
+        if not isinstance(Y_trend, (list, np.ndarray)):
             Y_trend = [Y_trend]
         Y_signi = self.signi[tuple(plot_indices)]
 
@@ -901,7 +1213,7 @@ class AppWindow(QtWidgets.QMainWindow):
             else:
                 slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
                 slope_X.append(self.X[indices][:, i[0]])
-        trend_string = "\n".join([f"trend {i+1}: {v:.2f}%/decade" for i, v in enumerate(Y_trend)])
+        trend_string = "\n".join([f"trend {k+1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
 
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
         plot_number = 1
@@ -951,16 +1263,18 @@ def load_config_ini(ini_path):
             key = key.strip()
             if key == 'additional_proxy_path':
                 add_proxy_count += 1
-
-        # Creating empty lists for the additional proxy data
-        ini['additional_proxy_path'] = np.empty(add_proxy_count, dtype='object')
-        ini['additional_proxy_time_col'] = np.zeros(add_proxy_count, dtype='object')
-        ini['additional_proxy_data_col'] = np.ones(add_proxy_count, dtype=int)
-        ini['additional_proxy_method'] = np.ones(add_proxy_count, dtype=int)
-        ini['additional_proxy_tag'] = np.empty(add_proxy_count, dtype='object')
-        ini['additional_proxy_comment_symbol'] = np.empty(add_proxy_count, dtype='object')
-        ini['additional_proxy_header_size'] = np.empty(add_proxy_count, dtype=int)
-        ini['additional_proxy_time_format'] = np.empty(add_proxy_count, dtype='object')
+        if add_proxy_count > 0:
+            # Creating empty lists for the additional proxy data
+            ini['additional_proxy_path'] = np.empty(add_proxy_count, dtype='object')
+            ini['additional_proxy_time_col'] = np.zeros(add_proxy_count, dtype='object')
+            ini['additional_proxy_data_col'] = np.ones(add_proxy_count, dtype='object')
+            ini['additional_proxy_method'] = np.ones(add_proxy_count, dtype=int)
+            ini['additional_proxy_seas_comp'] = np.ones(add_proxy_count, dtype=int)*2
+            ini['additional_proxy_tag'] = np.empty(add_proxy_count, dtype='object')
+            # ini['additional_proxy_comment_symbol'] = np.empty(add_proxy_count, dtype='object')
+            ini['additional_proxy_header_size'] = np.zeros(add_proxy_count, dtype=int)
+            ini['additional_proxy_time_format'] = np.empty(add_proxy_count, dtype='object')
+            ini['additional_proxy_tag_array'] = np.empty(add_proxy_count, dtype='object')
 
     with open(ini_path, 'r') as f:
         add_proxy_count = -1
@@ -969,7 +1283,7 @@ def load_config_ini(ini_path):
                 # Skip line in config file if no = sign is in there or if it starts with #
                 continue
             (key, val) = line.split('=')
-            # cleaning the input data
+            # Cleaning the input data
             key = key.strip()
             val = val.strip()
             if key in ini.keys():
@@ -978,8 +1292,7 @@ def load_config_ini(ini_path):
                 ini[key][add_proxy_count] = val
             else:
                 ini[key] = val
-
-    ini['additional_proxy_method'] = ini.get('additional_proxy_method', ini.get('default_proxy_method', 1))
+    # ini['additional_proxy_method'] = ini.get('additional_proxy_method', ini.get('default_proxy_method', 1))
 
     return ini
 
@@ -1084,20 +1397,35 @@ def get_proxy_time_overlap(ini, proxies, data):
 
 def convert_to_datetime(time, ini=None):
     # Converting every possible time to datetime
-    # STILL NEEDS MORE OPTIONS
-    if ini is not None:
-        format = ini.get('time_format', '%Y%m')
-    else:
-        format = '%Y-%m-%d'
-    if isinstance(time, np.ndarray):
-        if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
-            time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
-        elif (time.astype(int) == time).all():
-            time = np.array([dt.datetime.strptime(str(int(x)), format).date() for x in time])
-        elif np.issubdtype(time.dtype, np.datetime64):
-            time = pd.to_datetime(time)
 
-    return time
+    try:
+        if ini.get('time_format', None):
+            if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
+                time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
+            elif (time.astype(int) == time).all():
+                time = np.array([dt.datetime.strptime(str(int(x)), format).date() for x in time])
+            elif np.issubdtype(time.dtype, np.datetime64):
+                time = pd.to_datetime(time)
+            else:
+                time = pd.Series(time).apply(parse_time)
+    except:
+        time = pd.Series(time).apply(parse_time)
+
+    return np.array(time)
+
+    # if ini is not None:
+    #     format = ini.get('time_format', '%Y-%m-%d')
+    # else:
+    #     format = '%Y-%m-%d'
+    # if isinstance(time, np.ndarray):
+    #     if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
+    #         time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
+    #     elif (time.astype(int) == time).all():
+    #         time = np.array([dt.datetime.strptime(str(int(x)), format).date() for x in time])
+    #     elif np.issubdtype(time.dtype, np.datetime64):
+    #         time = pd.to_datetime(time)
+    #
+    # return time
 
 
 def convert_datetime_to_fractional(time):
@@ -1158,13 +1486,12 @@ def get_string_groups(string_list):
     for k, i in enumerate(string_list):
         match = pattern_group.search(i)
         index = [kk for kk, s in enumerate(attribute_list) if s in i]
-        # print(i)
         if index[0] == None:
             continue
         if match and attribute_list[index[0]] in i:
             type_ = match.group(1)
             number = int(match.group(2))
-            key = (type_, str(attribute_list[index[0]]) , number)
+            key = (type_, str(attribute_list[index[0]]), number)
             if key not in groups:
                 groups[key] = []
             groups[key].append(k)
@@ -1176,7 +1503,6 @@ def get_string_groups(string_list):
                 if key not in groups:
                     groups[key] = []
                 groups[key].append(k)
-
     return groups
 
 
@@ -1244,8 +1570,8 @@ def load_default_proxies(ini):
     return proxy_list
 
 
-def load_proxy_file(fileName, ini, proxy_col=None):
-    proxy_raw = pd.read_csv(fileName, comment=ini['comment_symbol'], delim_whitespace=True, header=None, index_col=0)
+def load_proxy_file_OLD(fileName, ini, proxy_col=None):
+    proxy_raw = pd.read_csv(fileName, comment=ini.get('comment_symbol', None), delim_whitespace=True, header=None, index_col=0)
     proxy_raw.dropna(axis=1, how='all', inplace=True)
 
     try:
@@ -1267,7 +1593,63 @@ def load_proxy_file(fileName, ini, proxy_col=None):
     return proxy
 
 
-def load_additional_proxies(proxies, ini):
+def load_add_proxy_file(ini, prox_num):
+    files = ini.get('additional_proxy_path', None)
+    file = ini.get('additional_proxy_path', None)[prox_num]
+    if not file:
+        print('No additional proxy files found.')
+        return None
+
+    time_col = ini.get('additional_proxy_time_col', [0] * len(files))[prox_num]
+    proxy_col = ini.get('additional_proxy_data_col', [1] * len(files))[prox_num]
+    method = ini.get('additional_proxy_method', [int(ini.get('default_proxy_method', 1))] * len(files))[prox_num]
+    seas = ini.get('additional_proxy_seas_comp', [int(ini.get('default_seasonal_component', 2))] * len(files))[prox_num]
+    format = ini.get('additional_proxy_time_format', ['%Y%m'] * len(files))[prox_num]
+    header_size = ini.get('additional_proxy_header_size', [0] * len(files))[prox_num]
+    tag = ini.get('additional_proxy_tag', [False] * len(files))[prox_num]
+    tag_values = ini.get('additional_proxy_tag_array', [False] * len(files))[prox_num]
+
+    # Trying to get the proxy name by using the file name
+    name = file.split('/')[-1].split('.')[0]
+    proxy = Proxy(name)
+
+    if file.endswith('.nc'):
+        dataset = nc.Dataset(file, 'r')
+        setattr(proxy, 'data', dataset.variables[proxy_col][:])
+        dependencies = dataset.variables[proxy_col].dimensions
+        setattr(proxy, 'time', dataset.variables[time_col][:])
+        if len(dependencies) >= 2:
+            setattr(proxy, tag, dataset.variables[dependencies[1]][:])
+            setattr(proxy, 'tag', tag)
+
+    else:
+        proxy_raw = pd.read_csv(file, comment=ini.get('comment_symbol', None), sep='\s+', header=None, skiprows=int(header_size))
+        proxy_raw.dropna(axis=1, how='all', inplace=True)
+        proxy_raw.index = np.array(proxy_raw)[:, int(time_col)]
+        proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
+
+        if tag:
+            # How to define the tag values, like latitude or longitude? By using a column of the data or user input? How to distinguish?
+            tag_values = list(map(float, tag_values.split(',')))
+            if len(tag_values) == 3:
+                # Create an array depending on the three tag value inputs
+                tag_values = np.arange(tag_values[0], tag_values[1] + tag_values[2], tag_values[2])
+            proxy_data = np.array(proxy_raw)[:, int(proxy_col):]
+            setattr(proxy, tag, tag_values)
+            setattr(proxy, 'tag', tag)
+        else:
+            proxy_data = np.array(proxy_raw)[:, int(proxy_col)]
+
+        proxy.time = pd.Series(proxy_raw.index).apply(lambda dt: dt.replace(day=15))
+        proxy.data = proxy_data
+        proxy.source = [file, proxy_col]
+        proxy.method = method
+        proxy.seas_comp = seas
+
+    return proxy
+
+
+def load_additional_proxies_OLD(proxies, ini):
     if 'additional_proxy_path' not in ini:
         return proxies
     add_proxies = []
@@ -1299,6 +1681,54 @@ def load_additional_proxies(proxies, ini):
     return proxies
 
 
+def load_additional_proxies_OLD(proxies, ini):
+    if 'additional_proxy_path' not in ini:
+        return proxies
+    add_proxies = []
+    # Loop over every path in the ini file
+    for k, i in enumerate(ini['additional_proxy_path']):
+        if ',' in str(ini['additional_proxy_time_col'][k]):
+            time_index_list = np.array(ini['additional_proxy_time_col'][k].split(','), dtype=int)
+            proxy_data = pd.read_csv(i, sep='\s+', index_col=time_index_list[0])
+        else:
+            proxy_data = pd.read_csv(i, sep='\s+', index_col=int(ini['additional_proxy_time_col'][k]))
+        add_proxies.append(Proxy(proxy_data.columns.values[int(ini['additional_proxy_data_col'][k])-1]))
+        proxy_data.dropna(axis=1, how='all', inplace=True)
+        proxy_data.index = pd.to_datetime(proxy_data.index, format=ini['additional_proxy_time_format'][k]).date
+
+        add_proxies[k].data = np.array(proxy_data)[:, int(ini['additional_proxy_data_col'][k])-1]
+        if ',' in ini['additional_proxy_time_col']:
+            date = np.empty(len(proxy_data.index), dtype='object')
+            for kk, ii in enumerate(date):
+                date[kk] = dt.datetime(np.array(proxy_data.index)[kk], np.array(proxy_data)[time_index_list[1]+1, kk], 15).date()
+            add_proxies[k].time = pd.Series(date)
+        else:
+            add_proxies[k].time = pd.Series(proxy_data.index).apply(lambda dt: dt.replace(day=15))
+        add_proxies[k].method = ini['additional_proxy_method'][k]
+        add_proxies[k].tag = ini['additional_proxy_tag'][k]
+        add_proxies[k].source = [i, int(ini['additional_proxy_data_col'][k])-1]
+
+    proxies = proxies + add_proxies
+
+    return proxies
+
+
+def load_additional_proxies(proxies, ini):
+    if 'additional_proxy_path' not in ini:
+        return proxies
+    add_proxies = []
+    # Loop over every path in the ini file
+    for k, i in enumerate(ini['additional_proxy_path']):
+        additional_proxy = load_add_proxy_file(ini, k)
+        if additional_proxy == None:
+            continue
+        add_proxies.append(additional_proxy)
+
+    proxies = proxies + add_proxies
+
+    return proxies
+
+
 def predict_alt_unit(alt):
     # Predicting the unit of the altitude depending on the scale of the values
     if np.nanmax(alt) >= 10000:
@@ -1307,63 +1737,6 @@ def predict_alt_unit(alt):
         return 'km'
     else:
         return 'hPa'
-
-
-def load_netCDF_OLD(filename, ini):
-    try:
-        dataset = nc.Dataset(filename, 'r')
-
-        var_list = ['o3_var', 'time_var', 'lat_var', 'lon_var', 'lev_var']
-        group_name = ini.get('group_name')
-        group = dataset[group_name] if group_name else dataset
-
-        # Create a dataset class
-        try:
-            data = Dataset(filename.split('/')[-1].split('.')[0])
-        except:
-            data = Dataset('New Dataset')
-
-        # Loop over each key in the dictionary and look for the variable names
-        for var_name, var_key in ini.items():
-            if var_name not in var_list:
-                # If the dictionary key is not one of the variable names, skip to the next loop
-                continue
-            try:
-                setattr(data, var_name.split('_')[0], group.variables[var_key][:])
-            except:
-                continue
-                # raise Exception('f"Variable "var_key" not found in the netCDF file.')
-
-        # Transposing the ozone data
-        dependencies = group.variables[ini['o3_var']].dimensions
-        var_names = {'time': [ini.get('time_var'), 'date', 'time'], 'lat': [ini.get('lat_var'), 'latitude', 'lat'], 'lon': [ini.get('lon_var'), 'longitude', 'lon'], 'alt': [ini.get('lev_var'), 'altitude', 'alt', 'level', 'lev']}
-        order = ['time', 'lat', 'lon', 'alt']
-        permutation = []
-        dim_array = []
-
-        for dim_name in order:
-            found = False
-            for possible_name in var_names[dim_name]:
-                if possible_name in dependencies:
-                    permutation.append(dependencies.index(possible_name))
-                    dim_array.append(dim_name)
-                    found = True
-                    break
-            if not found:
-                permutation.append(None)
-
-        data.o3 = np.transpose(data.o3, [index for index in permutation if index is not None])
-        data.o3 = np.ma.masked_invalid(data.o3)
-        data.dim_array = dim_array
-        data.time = convert_to_datetime(data.time, ini)
-        data.time_format = ini['time_format']
-
-        dataset.close()
-        return data
-
-    except Exception as e:
-        print('Error loading NetCDF file:', e)
-        return None
 
 
 def load_netCDF(filename, ini):
@@ -1395,8 +1768,7 @@ def load_netCDF(filename, ini):
                 setattr(data, i + '_unit', ini.get('additional_var_' + str(k + 1) + '_unit', ''))
                 setattr(data, i + '_tag', ini.get('additional_var_' + str(k + 1) + '_tag', ''))
 
-        new_order = [int(ini.get('date_dim', 1)) - 1] + [i for i in range(len(dependencies)) if i != int(ini.get('date_dim', 1)) - 1]
-
+        new_order = [int(ini.get('time_dim', 1)) - 1] + [i for i in range(len(dependencies)) if i != int(ini.get('time_dim', 1)) - 1]
         data.o3 = np.transpose(data.o3, axes=new_order)
         data.o3 = np.ma.masked_invalid(data.o3)
         data.dim_array = [dependencies[i] for i in new_order]
@@ -1781,7 +2153,7 @@ def get_X_2(proxies, nanmask, X_proxy_size, it, data):
         if len(i.data.shape) > 1:
             for kk, ii in enumerate(data.dim_array[1:]):
                 if getattr(data, ii + '_tag') == i.tag:
-                    tag = ii
+                    tag = i.tag
                     tag_val = getattr(data, ii)[it.multi_index[kk]]
             if tag_val in getattr(i, tag):
                 proxy_data = i.data[nanmask, np.where(getattr(i, tag) == tag_val)]
@@ -1984,7 +2356,7 @@ def iup_reg_model(data, proxies, ini):
     elif ini['inflection_method'] == 'pwl':
         trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        X_string = ['intercept', 'trend', 'piece-wise-linear trend']
+        X_string = ['intercept', 'piece-wise linear trend #1', 'piece-wise linear trend #2']
     elif ini['inflection_method'] == 'ind':
         trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
         siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan

@@ -288,9 +288,8 @@ class ProxyWindow(QtWidgets.QDialog):
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
 
-        if not self.ini.get('additional_proxy_path'):
+        if not self.ini.get('additional_proxy_path', None).all():
             self.create_add_proxy_list()
-
 
     def show_options(self):
         current_index = self.variable_widget.currentIndex()
@@ -300,15 +299,15 @@ class ProxyWindow(QtWidgets.QDialog):
             self.variable_widget.setCurrentIndex(0)
 
     def create_add_proxy_list(self):
-        self.ini['additional_proxy_path'] = []
-        self.ini['additional_proxy_time_col'] = []
-        self.ini['additional_proxy_data_col'] = []
-        self.ini['additional_proxy_method'] = []
-        self.ini['additional_proxy_seas_comp'] = []
-        self.ini['additional_proxy_time_format'] = []
-        self.ini['additional_proxy_header_size'] = []
-        self.ini['additional_proxy_tag'] = []
-        self.ini['additional_proxy_tag_array'] = []
+        self.ini['additional_proxy_path'] = np.array([], dtype='object')
+        self.ini['additional_proxy_time_col'] = np.array([], dtype='object')
+        self.ini['additional_proxy_data_col'] = np.array([], dtype=int)
+        self.ini['additional_proxy_method'] = np.array([], dtype=int)
+        self.ini['additional_proxy_seas_comp'] = np.array([], dtype='object')
+        self.ini['additional_proxy_time_format'] = np.array([], dtype='object')
+        self.ini['additional_proxy_header_size'] = np.array([], dtype=int)
+        self.ini['additional_proxy_tag'] = np.array([], dtype='object')
+        self.ini['additional_proxy_tag_array'] = np.array([], dtype='object')
 
     def toggle_2d(self):
         if self.is2d_check.isChecked() == True:
@@ -395,8 +394,6 @@ class ProxyWindow(QtWidgets.QDialog):
         self.proxy_var_combo.addItems(self.keys)
 
     def open_preview(self):
-        proxy_raw = pd.read_csv(self.file, sep='\s+', header=None, skiprows=int(self.header_rows.text()))
-        proxy_raw.dropna(axis=1, how='all', inplace=True)
         try:
             proxy_raw = pd.read_csv(self.file, sep='\s+', header=None, skiprows=int(self.header_rows.text()))
             proxy_raw.dropna(axis=1, how='all', inplace=True)
@@ -431,34 +428,33 @@ class ProxyWindow(QtWidgets.QDialog):
         # Saves all settings and closes the settings window
 
         # Save depending on current open page
-
-        self.ini['additional_proxy_path'].append(self.file)
+        self.ini['additional_proxy_path'] = np.append(self.ini['additional_proxy_path'], self.file)
         if self.proxy_widget.currentIndex() == 0:
             for widget in self.variable_stacked_widget.children():
                 if isinstance(widget, QtWidgets.QFrame):
                     if widget.layout().itemAt(1).widget().layout().itemAt(2).widget().text() == 'time':
-                        self.ini['additional_proxy_time_col'].append(widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
-                        self.ini['additional_proxy_time_format'].append(widget.layout().itemAt(2).widget().layout().itemAt(2).widget().text())
+                        self.ini['additional_proxy_time_col'] = np.append(self.ini['additional_proxy_time_col'], widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
+                        self.ini['additional_proxy_time_format'] = np.append(self.ini['additional_proxy_time_format'], widget.layout().itemAt(2).widget().layout().itemAt(2).widget().text())
                     else:
-                        self.ini['additional_proxy_tag_array'].append(widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
-                        self.ini['additional_proxy_tag'].append(widget.layout().itemAt(1).widget().layout().itemAt(2).widget().text())
-            self.ini['additional_proxy_data_col'].append(self.proxy_var_combo.currentText())
-            self.ini['additional_proxy_method'].append(self.ini.get('default_proxy_method', 1))
-            self.ini['additional_proxy_seas_comp'].append(self.ini.get('intercept_method', 2))
-            self.ini['additional_proxy_header_size'].append(0)
+                        self.ini['additional_proxy_tag_array'] = np.append(self.ini['additional_proxy_tag_array'], widget.layout().itemAt(0).widget().layout().itemAt(2).widget().currentText())
+                        self.ini['additional_proxy_tag'] = np.append(self.ini['additional_proxy_tag'], widget.layout().itemAt(1).widget().layout().itemAt(2).widget().text())
+            self.ini['additional_proxy_data_col'] = np.append(self.ini['additional_proxy_data_col'], self.proxy_var_combo.currentText())
+            self.ini['additional_proxy_method'] = np.append(self.ini['additional_proxy_method'], self.ini.get('default_proxy_method', 1))
+            self.ini['additional_proxy_seas_comp'] = np.append(self.ini['additional_proxy_seas_comp'], self.ini.get('intercept_method', 2))
+            self.ini['additional_proxy_header_size'] = np.append(self.ini['additional_proxy_header_size'], 0)
         else:
-            self.ini['additional_proxy_time_col'].append(self.proxy_time.text())
+            self.ini['additional_proxy_time_col'] = np.append(self.ini['additional_proxy_time_col'], self.proxy_time.text())
             if self.is2d_check.isChecked():
-                self.ini['additional_proxy_tag_array'].append(self.tag_values.text())
-                self.ini['additional_proxy_tag'].append(self.tag.text())
+                self.ini['additional_proxy_tag_array'] = np.append(self.ini['additional_proxy_tag_array'], self.tag_values.text())
+                self.ini['additional_proxy_tag'] = np.append(self.ini['additional_proxy_tag'], self.tag.text())
             else:
-                self.ini['additional_proxy_tag_array'].append(False)
-                self.ini['additional_proxy_tag'].append(False)
-            self.ini['additional_proxy_data_col'].append(self.proxy_data.text())
-            self.ini['additional_proxy_method'].append(self.ini.get('default_proxy_method', 1))
-            self.ini['additional_proxy_seas_comp'].append(self.ini.get('intercept_method', 2))
-            self.ini['additional_proxy_header_size'].append(self.header_rows.text())
-            self.ini['additional_proxy_time_format'].append('%Y%m')
+                self.ini['additional_proxy_tag_array'] = np.append(self.ini['additional_proxy_tag_array'], False)
+                self.ini['additional_proxy_tag'] = np.append(self.ini['additional_proxy_tag'], False)
+            self.ini['additional_proxy_data_col'] = np.append(self.ini['additional_proxy_data_col'], self.proxy_data.text())
+            self.ini['additional_proxy_method'] = np.append(self.ini['additional_proxy_method'], self.ini.get('default_proxy_method', 1))
+            self.ini['additional_proxy_seas_comp'] = np.append(self.ini['additional_proxy_seas_comp'], self.ini.get('intercept_method', 2))
+            self.ini['additional_proxy_header_size'] = np.append(self.ini['additional_proxy_header_size'], self.header_rows.text())
+            self.ini['additional_proxy_time_format'] = np.append(self.ini['additional_proxy_time_format'], '%Y%m')
 
         self.ini_signal.emit(self.ini)
         self.accept()
@@ -1399,7 +1395,8 @@ def convert_to_datetime(time, ini=None):
     # Converting every possible time to datetime
 
     try:
-        if ini.get('time_format', None):
+        format = ini.get('time_format', None)
+        if format:
             if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
                 time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
             elif (time.astype(int) == time).all():
@@ -1407,25 +1404,15 @@ def convert_to_datetime(time, ini=None):
             elif np.issubdtype(time.dtype, np.datetime64):
                 time = pd.to_datetime(time)
             else:
-                time = pd.Series(time).apply(parse_time)
+                time = pd.Series(time).apply(lambda index: parse_time(index, format=format))
+        else:
+            print('There was no time format given. The IUP Regression Model will try to find a working format. Please check if the date is shown correctly afterwards.')
+            time = pd.Series(time).apply(parse_time)
+
     except:
-        time = pd.Series(time).apply(parse_time)
+        time = pd.Series(time).apply(lambda index: parse_time(index, format=format))
 
     return np.array(time)
-
-    # if ini is not None:
-    #     format = ini.get('time_format', '%Y-%m-%d')
-    # else:
-    #     format = '%Y-%m-%d'
-    # if isinstance(time, np.ndarray):
-    #     if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
-    #         time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
-    #     elif (time.astype(int) == time).all():
-    #         time = np.array([dt.datetime.strptime(str(int(x)), format).date() for x in time])
-    #     elif np.issubdtype(time.dtype, np.datetime64):
-    #         time = pd.to_datetime(time)
-    #
-    # return time
 
 
 def convert_datetime_to_fractional(time):
@@ -1441,7 +1428,19 @@ def convert_datetime_to_fractional(time):
     return frac_array
 
 
-def parse_time(value):
+def parse_time(value, month=None, format=None):
+
+    # If there is a month value, combine value (year) and month to one string
+    if month:
+        return dt.date(int(value), int(month), 15)
+        # value = dt.date(int(value), int(month), 15).strftime('%Y-%m')
+
+    if format:
+        try:
+            dt.datetime.strptime(value, format).date()
+        except:
+            print('The format did not work with the loaded time data. The IUP Regression Model will try to find a working format. Please check if the date is shown correctly afterwards.')
+
     # Convert value to string
     value = str(value)
 
@@ -1601,6 +1600,12 @@ def load_add_proxy_file(ini, prox_num):
         return None
 
     time_col = ini.get('additional_proxy_time_col', [0] * len(files))[prox_num]
+    # Check for a split date, year and month
+    if ',' in time_col:
+        month_col = list(map(str.strip, time_col.split(',')))[1]
+        time_col = list(map(str.strip, time_col.split(',')))[0]
+    else:
+        month_col = None
     proxy_col = ini.get('additional_proxy_data_col', [1] * len(files))[prox_num]
     method = ini.get('additional_proxy_method', [int(ini.get('default_proxy_method', 1))] * len(files))[prox_num]
     seas = ini.get('additional_proxy_seas_comp', [int(ini.get('default_seasonal_component', 2))] * len(files))[prox_num]
@@ -1617,7 +1622,14 @@ def load_add_proxy_file(ini, prox_num):
         dataset = nc.Dataset(file, 'r')
         setattr(proxy, 'data', dataset.variables[proxy_col][:])
         dependencies = dataset.variables[proxy_col].dimensions
-        setattr(proxy, 'time', dataset.variables[time_col][:])
+
+        if month_col:
+            time = pd.Series([parse_time(year, format=format, month=month) for year, month in zip(dataset.variables[time_col][:], dataset.variables[month_col][:])])
+        else:
+            time = pd.Series([parse_time(year, format=format, month=None) for year in dataset.variables[time_col][:]])
+        setattr(proxy, 'time', time)
+        # time = pd.Series(dataset.variables[time_col][:]).apply(lambda index: parse_time(index, format=format, month=month_col))
+        # setattr(proxy, 'time', dataset.variables[time_col][:])
         if len(dependencies) >= 2:
             setattr(proxy, tag, dataset.variables[dependencies[1]][:])
             setattr(proxy, 'tag', tag)
@@ -1626,10 +1638,13 @@ def load_add_proxy_file(ini, prox_num):
         proxy_raw = pd.read_csv(file, comment=ini.get('comment_symbol', None), sep='\s+', header=None, skiprows=int(header_size))
         proxy_raw.dropna(axis=1, how='all', inplace=True)
         proxy_raw.index = np.array(proxy_raw)[:, int(time_col)]
-        proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
+        if month_col:
+            proxy_raw.index = pd.Series([parse_time(year, format=format, month=month)for year, month in zip(proxy_raw.index.to_series(), pd.Series(np.array(proxy_raw)[:, month_col]))])
+        else:
+            proxy_raw.index = pd.Series([parse_time(year, format=format, month=None) for year in proxy_raw.index.to_series()])
+        # proxy_raw.index = proxy_raw.index.to_series().apply(parse_time, month=month, format=format)
 
         if tag:
-            # How to define the tag values, like latitude or longitude? By using a column of the data or user input? How to distinguish?
             tag_values = list(map(float, tag_values.split(',')))
             if len(tag_values) == 3:
                 # Create an array depending on the three tag value inputs
@@ -1762,7 +1777,13 @@ def load_netCDF(filename, ini):
         dependencies = group.variables[ini['o3_var']].dimensions
         for k, i in enumerate(dependencies):
             if k == int(ini.get('time_dim', 1)) - 1:
-                setattr(data, 'time', group.variables[ini.get('time_var', 'time')][:])
+                if ',' in ini.get('time_var', 'time'):
+                    # With two variable names in the config.ini, both will be read and combined as strings (year-month)
+                    months = np.array(group.variables[list(map(str, ini.get('time_var', 'time').split(',')))[1]][:], dtype=str)
+                    years = np.array(group.variables[list(map(str, ini.get('time_var', 'time').split(',')))[0]][:], dtype=str)
+                    setattr(data, 'time', years + '-' + months)
+                else:
+                    setattr(data, 'time', group.variables[ini.get('time_var', 'time')][:])
             else:
                 setattr(data, i, group.variables[ini.get('additional_var_' + str(k + 1) + '_index', i)][:])
                 setattr(data, i + '_unit', ini.get('additional_var_' + str(k + 1) + '_unit', ''))
@@ -2399,7 +2420,7 @@ def iup_reg_model(data, proxies, ini):
                     continue
                 i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)])
             i.data = i.data[:len(np.unique(time.year))]
-        if getattr(data, 'inflection_index', None):
+        if getattr(data, 'inflection_index', None)[0]:
             for k, i in enumerate(data.inflection_index):
                 data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]  # Change inflection point to reflect the yearly data
     elif check == 2:
@@ -2563,4 +2584,4 @@ def iup_ui(ui=False):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

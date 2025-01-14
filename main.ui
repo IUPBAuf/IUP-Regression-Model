@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>625</width>
-    <height>879</height>
+    <width>683</width>
+    <height>878</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -51,6 +51,12 @@
            </item>
            <item>
             <widget class="QListWidget" name="data_list">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
              <property name="font">
               <font>
                <pointsize>13</pointsize>
@@ -383,155 +389,6 @@
                 </layout>
                </widget>
               </item>
-              <item>
-               <widget class="Line" name="line">
-                <property name="orientation">
-                 <enum>Qt::Horizontal</enum>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QWidget" name="widget_3" native="true">
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <layout class="QGridLayout" name="gridLayout_2">
-                 <item row="2" column="0">
-                  <widget class="QLabel" name="label_4">
-                   <property name="text">
-                    <string>Intercept Method:</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item row="2" column="1">
-                  <widget class="QComboBox" name="intercept_method_combo">
-                   <item>
-                    <property name="text">
-                     <string>disabled</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>single</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>harmonics</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>12 months</string>
-                    </property>
-                   </item>
-                  </widget>
-                 </item>
-                 <item row="1" column="0">
-                  <widget class="QLabel" name="label_3">
-                   <property name="text">
-                    <string>Trend Method:</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item row="1" column="1">
-                  <widget class="QComboBox" name="trend_method_combo">
-                   <item>
-                    <property name="text">
-                     <string>disabled</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>single</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>harmonics</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>12 month</string>
-                    </property>
-                   </item>
-                  </widget>
-                 </item>
-                 <item row="0" column="2">
-                  <widget class="QLabel" name="label_5">
-                   <property name="text">
-                    <string>Seasonal Component:</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item row="2" column="2">
-                  <widget class="QComboBox" name="intercept_seas_combo">
-                   <property name="enabled">
-                    <bool>false</bool>
-                   </property>
-                   <item>
-                    <property name="text">
-                     <string>annual (2 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>semi-annual (4 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>tri-annual (6 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>quarter-annual (8 terms)</string>
-                    </property>
-                   </item>
-                  </widget>
-                 </item>
-                 <item row="1" column="2">
-                  <widget class="QComboBox" name="trend_seas_combo">
-                   <property name="enabled">
-                    <bool>false</bool>
-                   </property>
-                   <item>
-                    <property name="text">
-                     <string>annual (2 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>semi-annual (4 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>tri-annual (6 terms)</string>
-                    </property>
-                   </item>
-                   <item>
-                    <property name="text">
-                     <string>quarter-annual (8 terms)</string>
-                    </property>
-                   </item>
-                  </widget>
-                 </item>
-                 <item row="0" column="1">
-                  <widget class="QLabel" name="label_6">
-                   <property name="text">
-                    <string>Method:</string>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
              </layout>
             </widget>
            </item>
@@ -554,22 +411,93 @@
                <number>0</number>
               </property>
               <item>
-               <widget class="QTableWidget" name="proxy_list">
-                <property name="toolTip">
-                 <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Successfully loaded proxies, their methods and their seasonal components for the trend analysis.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                </property>
-                <property name="frameShape">
-                 <enum>QFrame::NoFrame</enum>
-                </property>
-                <property name="columnCount">
-                 <number>3</number>
-                </property>
-                <attribute name="verticalHeaderVisible">
-                 <bool>false</bool>
-                </attribute>
-                <column/>
-                <column/>
-                <column/>
+               <widget class="QWidget" name="widget_25" native="true">
+                <layout class="QVBoxLayout" name="verticalLayout_19">
+                 <property name="spacing">
+                  <number>0</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <item>
+                  <widget class="QTableWidget" name="frozen_list">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="toolTip">
+                    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Successfully loaded proxies, their methods and their seasonal components for the trend analysis.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="verticalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <attribute name="verticalHeaderVisible">
+                    <bool>false</bool>
+                   </attribute>
+                   <column>
+                    <property name="text">
+                     <string>Variable</string>
+                    </property>
+                   </column>
+                   <column>
+                    <property name="text">
+                     <string>Method</string>
+                    </property>
+                   </column>
+                   <column>
+                    <property name="text">
+                     <string>Seasonal Component</string>
+                    </property>
+                   </column>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="seperator_line">
+                   <property name="frameShape">
+                    <enum>QFrame::HLine</enum>
+                   </property>
+                   <property name="frameShadow">
+                    <enum>QFrame::Sunken</enum>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QTableWidget" name="proxy_list">
+                   <property name="toolTip">
+                    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Successfully loaded proxies, their methods and their seasonal components for the trend analysis.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="columnCount">
+                    <number>3</number>
+                   </property>
+                   <attribute name="horizontalHeaderVisible">
+                    <bool>false</bool>
+                   </attribute>
+                   <attribute name="verticalHeaderVisible">
+                    <bool>false</bool>
+                   </attribute>
+                   <column/>
+                   <column/>
+                   <column/>
+                  </widget>
+                 </item>
+                </layout>
                </widget>
               </item>
               <item>
@@ -949,7 +877,7 @@
           </widget>
           <widget class="QWidget" name="tab_4">
            <attribute name="title">
-            <string>X</string>
+            <string>Independent Variable Matrix</string>
            </attribute>
            <layout class="QVBoxLayout" name="verticalLayout_17">
             <item>
@@ -1011,7 +939,26 @@
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout_6">
         <item>
-         <widget class="QWidget" name="figure_widget" native="true"/>
+         <widget class="QTabWidget" name="figure_tabs">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
+          <widget class="QWidget" name="figure_widget" native="true">
+           <attribute name="title">
+            <string>Model</string>
+           </attribute>
+          </widget>
+          <widget class="QWidget" name="resi_widget">
+           <attribute name="title">
+            <string>Residual</string>
+           </attribute>
+          </widget>
+          <widget class="QWidget" name="cell_widget">
+           <attribute name="title">
+            <string>Observations</string>
+           </attribute>
+          </widget>
+         </widget>
         </item>
         <item>
          <widget class="QWidget" name="widget_16" native="true">
@@ -1052,24 +999,22 @@
             </spacer>
            </item>
            <item>
-            <widget class="QLabel" name="dim_label">
-             <property name="text">
-              <string>Plot</string>
-             </property>
+            <widget class="QWidget" name="dim_widget" native="true">
+             <layout class="QHBoxLayout" name="horizontalLayout_12">
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+             </layout>
             </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="dim_combo"/>
-           </item>
-           <item>
-            <widget class="QLabel" name="axis_label">
-             <property name="text">
-              <string>Axis:</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="axis_combo"/>
            </item>
           </layout>
          </widget>
@@ -1085,7 +1030,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>625</width>
+     <width>683</width>
      <height>19</height>
     </rect>
    </property>

@@ -288,8 +288,14 @@ class ProxyWindow(QtWidgets.QDialog):
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
 
-        if not self.ini.get('additional_proxy_path', None).all():
-            self.create_add_proxy_list()
+        print(self.ini.get('additional_proxy_path'))
+
+        if isinstance(self.ini.get('additional_proxy_path', None), (list, np.ndarray)):
+            if not self.ini.get('additional_proxy_path', None).all():
+                self.create_add_proxy_list()
+        else:
+            if not self.ini.get('additional_proxy_path', None):
+                self.create_add_proxy_list()
 
     def show_options(self):
         current_index = self.variable_widget.currentIndex()
@@ -1107,8 +1113,9 @@ class AppWindow(QtWidgets.QMainWindow):
         for row in range(self.proxy_list.rowCount()):
             combo_box = self.proxy_list.cellWidget(row, 1)
             combo_box.setCurrentIndex(index)
-        self.intercept_method_combo.setCurrentIndex(index)
-        self.trend_method_combo.setCurrentIndex(index)
+        for row in range(self.frozen_list.rowCount()):
+            combo_box = self.frozen_list.cellWidget(row, 1)
+            combo_box.setCurrentIndex(index)
 
     def inflection_method_change(self):
         self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
@@ -1442,6 +1449,8 @@ def parse_time(value, month=None, format=None):
             print('The format did not work with the loaded time data. The IUP Regression Model will try to find a working format. Please check if the date is shown correctly afterwards.')
 
     # Convert value to string
+    if float(value) - int(value) == 0:
+        value = int(value)
     value = str(value)
 
     # Check for fractional year (e.g., 1997.0145)

@@ -108,7 +108,6 @@ class PreviewWindow(QtWidgets.QDialog):
                 self.preview_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
 
 
-
 # Popup window to set the variable names to load data
 class VariableWindow(QtWidgets.QDialog):
     ini_signal = pyqtSignal(dict)
@@ -2593,4 +2592,4 @@ def iup_ui(ui=False):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

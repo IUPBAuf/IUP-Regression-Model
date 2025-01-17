@@ -23,7 +23,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.3'
+ver = 'alpha 1.4'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -282,6 +282,9 @@ class ProxyWindow(QtWidgets.QDialog):
             self.is2d_check.toggled.connect(self.toggle_2d)
             self.bttn_ok.setEnabled(True)
 
+        # Set Proxy Name
+        self.proxy_name.setText(self.file.split('/')[-1].split('.')[0])
+
         # connect buttons
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
@@ -301,6 +304,7 @@ class ProxyWindow(QtWidgets.QDialog):
             self.variable_widget.setCurrentIndex(0)
 
     def create_add_proxy_list(self):
+        self.ini['additional_proxy_name'] = np.array([], dtype='object')
         self.ini['additional_proxy_path'] = np.array([], dtype='object')
         self.ini['additional_proxy_time_col'] = np.array([], dtype='object')
         self.ini['additional_proxy_data_col'] = np.array([], dtype=int)
@@ -428,8 +432,8 @@ class ProxyWindow(QtWidgets.QDialog):
 
     def save_settings(self):
         # Saves all settings and closes the settings window
-
         # Save depending on current open page
+        self.ini['additional_proxy_name'] = np.append(self.ini['additional_proxy_name'], self.proxy_name.text())
         self.ini['additional_proxy_path'] = np.append(self.ini['additional_proxy_path'], self.file)
         if self.proxy_widget.currentIndex() == 0:
             for widget in self.variable_stacked_widget.children():
@@ -1001,6 +1005,7 @@ class AppWindow(QtWidgets.QMainWindow):
                     add_proxy_count += 1
 
             # Creating empty lists for the additional proxy data
+            ini['additional_proxy_name'] = np.empty(add_proxy_count, dtype='object')
             ini['additional_proxy_path'] = np.empty(add_proxy_count, dtype='object')
             ini['additional_proxy_time_col'] = np.zeros(add_proxy_count, dtype='object')
             ini['additional_proxy_data_col'] = np.ones(add_proxy_count, dtype=int)
@@ -1297,6 +1302,7 @@ def load_config_ini(ini_path):
                 add_proxy_count += 1
         if add_proxy_count > 0:
             # Creating empty lists for the additional proxy data
+            ini['additional_proxy_name'] = np.empty(add_proxy_count, dtype='object')
             ini['additional_proxy_path'] = np.empty(add_proxy_count, dtype='object')
             ini['additional_proxy_time_col'] = np.zeros(add_proxy_count, dtype='object')
             ini['additional_proxy_data_col'] = np.ones(add_proxy_count, dtype='object')
@@ -1622,6 +1628,7 @@ def load_add_proxy_file(ini, prox_num):
         time_col = list(map(str.strip, time_col.split(',')))[0]
     else:
         month_col = None
+    proxy_name = ini.get('additional_proxy_name', [None] * len(files))[prox_num]
     proxy_col = ini.get('additional_proxy_data_col', [1] * len(files))[prox_num]
     method = ini.get('additional_proxy_method', [int(ini.get('default_proxy_method', 1))] * len(files))[prox_num]
     seas = ini.get('additional_proxy_seas_comp', [int(ini.get('default_seasonal_component', 2))] * len(files))[prox_num]
@@ -1631,7 +1638,10 @@ def load_add_proxy_file(ini, prox_num):
     tag_values = ini.get('additional_proxy_tag_array', [False] * len(files))[prox_num]
 
     # Trying to get the proxy name by using the file name
-    name = file.split('/')[-1].split('.')[0]
+    if proxy_name:
+        name = proxy_name
+    else:
+        name = file.split('/')[-1].split('.')[0]
     proxy = Proxy(name)
 
     if file.endswith('.nc'):
@@ -2449,4 +2459,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

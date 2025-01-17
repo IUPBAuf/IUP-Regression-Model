@@ -23,7 +23,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.2'
+ver = 'alpha 1.3'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -99,7 +99,6 @@ class PreviewWindow(QtWidgets.QDialog):
         self.btn_exit.clicked.connect(self.close)
 
     def fill_table(self, data):
-        print(data.shape)
         self.preview_table.setRowCount(data.shape[0])
         self.preview_table.setColumnCount(data.shape[1] if data.shape[1] else 0)
 
@@ -286,8 +285,6 @@ class ProxyWindow(QtWidgets.QDialog):
         # connect buttons
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
-
-        print(self.ini.get('additional_proxy_path'))
 
         if isinstance(self.ini.get('additional_proxy_path', None), (list, np.ndarray)):
             if not self.ini.get('additional_proxy_path', None).all():
@@ -489,6 +486,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 print('Error in loading the data file.')
         self.list_of_data.append(data)
         self.data_list.addItem(data.name)
+        if self.data_list.count() > 0:
+            self.data_list.setCurrentRow(0)
 
         self.load_presets()
 
@@ -523,7 +522,12 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Diagnostic UI functions
         self.dia_proxy_combo.currentIndexChanged.connect(self.proxy_diagnostic)
-        self.data_list.currentRowChanged.connect(self.data_diagnostic)
+        self.dim_data_layout = self.data_dim_widget.layout()
+        self.dim_data_boxes = []
+        self.dia_data_combo.currentIndexChanged.connect(self.populate_data_dim_widget)
+        self.add_data_dia()
+        self.dim_X_layout = self.X_dim_widget.layout()
+        self.dim_X_boxes = []
 
         # Start trend analysis
         self.compute_button.clicked.connect(self.compute_trends)
@@ -666,64 +670,31 @@ class AppWindow(QtWidgets.QMainWindow):
                 f.date_of_creation = dt.datetime.today().strftime('%Y-%m-%d')
                 f.configuration_settings = "\n".join([f"{key} = {value}" for key, value in self.ini.items()])
 
-    def data_diagnostic_changed_cell(self):
-        data = self.list_of_data[self.data_list.currentRow()]
+    def add_data_dia(self):
+        self.dia_data_combo.clear()
+        for i in self.list_of_data:
+            self.dia_data_combo.addItem(i.name)
 
-        lat_ind = self.dia_data_combo_lat.currentIndex()
-        lon_ind = self.dia_data_combo_lon.currentIndex()
-        alt_ind = self.dia_data_combo_alt.currentIndex()
+    def populate_data_dim_widget(self):
+        self.clear_dim_widgets(self.dim_data_layout)
+        self.dim_data_boxes.clear()
 
-        self.dia_data_table.setColumnCount(self.dia_data_combo_alt.count()-1)
-        self.dia_data_table.setRowCount(self.dia_data_combo_lat.count()-1)
+        for dim_index in range(1, len(self.list_of_data[self.dia_data_combo.currentIndex()].o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
+            col_layout.addWidget(label)
 
-        # self.dia_proxy_table.setVerticalHeaderLabels(self.proxies[index].time.astype(str))
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.list_of_data[self.dia_data_combo.currentIndex()], self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+            combo.currentIndexChanged.connect(self.data_diagnostic)
 
-        self.dia_data_table.clear()
-        for k in range(self.dia_data_combo_lat.count()-1):
-            for kk in range(self.dia_data_combo_alt.count()-1):
-                self.dia_data_table.setItem(k, kk, QTableWidgetItem(str(data.o3[:, kk, k])))
+            self.dim_data_boxes.append(combo)
 
-    def data_diagnostic(self):
-        data = self.list_of_data[self.data_list.currentRow()]
-
-        start_date = str(data.time[0])
-        end_date = str(data.time[-1])
-        self.dia_data_start.setText(start_date)
-        self.dia_data_end.setText(end_date)
-        if data.time is None:
-            self.dia_data_time.setText('-')
-        else:
-            time_str = ' '.join(map(str, data.time.shape))
-            self.dia_data_time.setText(time_str)
-        self.dia_data_combo_lat.clear()
-        if data.lat is None:
-            self.dia_data_lat.setText('-')
-        else:
-            lat_str = ' '.join(map(str, data.lat.shape))
-            self.dia_data_lat.setText(lat_str)
-            self.dia_data_combo_lat.addItem('All')
-            for k, i in enumerate(data.lat):
-                self.dia_data_combo_lat.addItem(str(i))
-        self.dia_data_combo_lon.clear()
-        if data.lon is None:
-            self.dia_data_lon.setText('-')
-        else:
-            self.dia_data_combo_lon.addItem('All')
-            for k, i in enumerate(data.lon):
-                self.dia_data_combo_lon.addItem(str(i))
-            lon_str = ' '.join(map(str, data.lon.shape))
-            self.dia_data_lon.setText(lon_str)
-        self.dia_data_combo_alt.clear()
-        if data.lev is None:
-            self.dia_data_alt.setText('-')
-        else:
-            self.dia_data_combo_alt.addItem('All')
-            for k, i in enumerate(data.lev):
-                self.dia_data_combo_alt.addItem(str(i))
-            alt_str = ' '.join(map(str, data.lev.shape))
-            self.dia_data_alt.setText(alt_str)
-
-        # self.data_diagnostic_changed_cell()
+            self.dim_data_layout.addLayout(col_layout)
+        self.data_diagnostic()
+        # data = self.list_of_data[self.data_list.currentRow()]
 
     def proxy_diagnostic(self, index):
         start_date = str(np.array(self.proxies[index].time)[0])
@@ -890,6 +861,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.data_list.clear()
         for i in self.list_of_data:
             self.data_list.addItem(i.name)
+
+        self.add_data_dia()
 
     def define_palettes(self):
         # Set palette
@@ -1124,7 +1097,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
 
     def compute_trends(self):
-        print(self.ini)
         self.setDisabled(True)
         self.trends, self.signi, self.diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
         self.setDisabled(False)
@@ -1142,6 +1114,8 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.clear_dim_widgets(self.dim_layout)
         self.populate_dim_widget()
+        self.clear_dim_widgets(self.dim_X_layout)
+        self.populate_X_dim_widget()
 
     def clear_dim_widgets(self, layout):
         if layout is not None:
@@ -1171,6 +1145,62 @@ class AppWindow(QtWidgets.QMainWindow):
             self.dim_boxes.append(combo)
 
             self.dim_layout.addLayout(col_layout)
+
+    def populate_X_dim_widget(self):
+        self.dim_X_boxes.clear()
+
+        for dim_index in range(1, len(self.current_data.o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
+            col_layout.addWidget(label)
+
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.current_data, self.current_data.dim_array[dim_index])
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+            combo.currentIndexChanged.connect(self.X_diagnostic)
+
+            self.dim_X_boxes.append(combo)
+
+            self.dim_X_layout.addLayout(col_layout)
+        self.X_diagnostic()
+
+    def X_diagnostic(self):
+        indices = [combo.currentIndex() for combo in self.dim_X_boxes]
+        matrix = self.X[(slice(None), *indices, slice(None))]
+        header = self.proxy_string
+        date = self.time
+
+        # Fill Table
+        self.dia_X_table.setColumnCount(len(header))
+        self.dia_X_table.setRowCount(len(date))
+
+        self.dia_X_table.setHorizontalHeaderLabels(header)
+        self.dia_X_table.setVerticalHeaderLabels(date.astype(str))
+
+        for k in range(len(date)):
+            for kk in range(len(header)):
+                self.dia_X_table.setItem(k, kk, QTableWidgetItem(str(matrix[k, kk])))
+
+    def data_diagnostic(self):
+        indices = [combo.currentIndex() for combo in self.dim_data_boxes]
+        matrix = self.list_of_data[self.dia_data_combo.currentIndex()].o3[(slice(None), *indices)]
+        date = self.list_of_data[self.dia_data_combo.currentIndex()].time
+
+        # Fill Table
+        self.dia_data_table.setColumnCount(1)
+        self.dia_data_table.setRowCount(len(date))
+
+        self.dia_data_table.setVerticalHeaderLabels(date.astype(str))
+
+        for k in range(len(date)):
+            self.dia_data_table.setItem(k, 0, QTableWidgetItem(str(matrix[k])))
+
+        # Fill information
+        self.dia_data_start.setText(str(np.nanmin(date)))
+        self.dia_data_end.setText(str(np.nanmax(date)))
+        self.dia_data_time.setText(str(len(date)))
+        self.dia_data_nan.setText(str(np.sum(np.isnan(matrix.filled(np.nan)))))
 
     def plot_figure(self):
         # Clear the figure
@@ -1374,7 +1404,8 @@ def get_proxy_time_overlap(ini, proxies, data):
 
     for i in new_proxies:
         if date_end > np.array(i.time)[-1] and i.method != 0:
-            date_end = np.array(i.time)[np.max(np.where(np.in1d(np.array(i.time), new_data.time))[0])]
+            date_end = np.array(i.time)[np.max(np.where(np.isin(np.array(i.time), new_data.time))[0])]
+            # date_end = np.array(i.time)[np.max(np.where(np.in1d(np.array(i.time), new_data.time))[0])]
 
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0]
@@ -1577,29 +1608,6 @@ def load_default_proxies(ini):
     return proxy_list
 
 
-def load_proxy_file_OLD(fileName, ini, proxy_col=None):
-    proxy_raw = pd.read_csv(fileName, comment=ini.get('comment_symbol', None), delim_whitespace=True, header=None, index_col=0)
-    proxy_raw.dropna(axis=1, how='all', inplace=True)
-
-    try:
-        proxy_raw.index = pd.to_datetime(proxy_raw.index, format=ini['time_format']).date
-    except:
-        raise Exception('The time format is not correct. Please follow the datetime format: hhttps://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior\nFor exammple "%Y-%M-%d" for the date format "2012-01-17"')
-
-    # Trying to get the proxy name by using the file name
-    name = fileName.split('/')[-1].split('.')[0]
-    proxy = Proxy(name)
-
-    proxy.time = pd.Series(proxy_raw.index).apply(lambda dt: dt.replace(day=15))
-    if proxy_col is not None:
-        proxy.data = np.array(proxy_raw)[:, proxy_col]
-    else:
-        proxy.data = np.array(proxy_raw)[:, 0]
-    proxy.source = [fileName, proxy_col]
-
-    return proxy
-
-
 def load_add_proxy_file(ini, prox_num):
     files = ini.get('additional_proxy_path', None)
     file = ini.get('additional_proxy_path', None)[prox_num]
@@ -1628,7 +1636,7 @@ def load_add_proxy_file(ini, prox_num):
 
     if file.endswith('.nc'):
         dataset = nc.Dataset(file, 'r')
-        setattr(proxy, 'data', dataset.variables[proxy_col][:])
+        setattr(proxy, 'data', dataset.variables[proxy_col][:].filled(np.nan))
         dependencies = dataset.variables[proxy_col].dimensions
 
         if month_col:
@@ -1670,70 +1678,6 @@ def load_add_proxy_file(ini, prox_num):
         proxy.seas_comp = seas
 
     return proxy
-
-
-def load_additional_proxies_OLD(proxies, ini):
-    if 'additional_proxy_path' not in ini:
-        return proxies
-    add_proxies = []
-    # Loop over every path in the ini file
-    for k, i in enumerate(ini['additional_proxy_path']):
-        if ',' in str(ini['additional_proxy_time_col'][k]):
-            time_index_list = np.array(ini['additional_proxy_time_col'][k].split(','), dtype=int)
-            proxy_data = pd.read_csv(i, sep='\s+', index_col=time_index_list[0])
-        else:
-            proxy_data = pd.read_csv(i, sep='\s+', index_col=int(ini['additional_proxy_time_col'][k]))
-        add_proxies.append(Proxy(proxy_data.columns.values[int(ini['additional_proxy_data_col'][k])-1]))
-        proxy_data.dropna(axis=1, how='all', inplace=True)
-        proxy_data.index = pd.to_datetime(proxy_data.index, format=ini['additional_proxy_time_format'][k]).date
-
-        add_proxies[k].data = np.array(proxy_data)[:, int(ini['additional_proxy_data_col'][k])-1]
-        if ',' in ini['additional_proxy_time_col']:
-            date = np.empty(len(proxy_data.index), dtype='object')
-            for kk, ii in enumerate(date):
-                date[kk] = dt.datetime(np.array(proxy_data.index)[kk], np.array(proxy_data)[time_index_list[1]+1, kk], 15).date()
-            add_proxies[k].time = pd.Series(date)
-        else:
-            add_proxies[k].time = pd.Series(proxy_data.index).apply(lambda dt: dt.replace(day=15))
-        add_proxies[k].method = ini['additional_proxy_method'][k]
-        add_proxies[k].tag = ini['additional_proxy_tag'][k]
-        add_proxies[k].source = [i, int(ini['additional_proxy_data_col'][k])-1]
-
-    proxies = proxies + add_proxies
-
-    return proxies
-
-
-def load_additional_proxies_OLD(proxies, ini):
-    if 'additional_proxy_path' not in ini:
-        return proxies
-    add_proxies = []
-    # Loop over every path in the ini file
-    for k, i in enumerate(ini['additional_proxy_path']):
-        if ',' in str(ini['additional_proxy_time_col'][k]):
-            time_index_list = np.array(ini['additional_proxy_time_col'][k].split(','), dtype=int)
-            proxy_data = pd.read_csv(i, sep='\s+', index_col=time_index_list[0])
-        else:
-            proxy_data = pd.read_csv(i, sep='\s+', index_col=int(ini['additional_proxy_time_col'][k]))
-        add_proxies.append(Proxy(proxy_data.columns.values[int(ini['additional_proxy_data_col'][k])-1]))
-        proxy_data.dropna(axis=1, how='all', inplace=True)
-        proxy_data.index = pd.to_datetime(proxy_data.index, format=ini['additional_proxy_time_format'][k]).date
-
-        add_proxies[k].data = np.array(proxy_data)[:, int(ini['additional_proxy_data_col'][k])-1]
-        if ',' in ini['additional_proxy_time_col']:
-            date = np.empty(len(proxy_data.index), dtype='object')
-            for kk, ii in enumerate(date):
-                date[kk] = dt.datetime(np.array(proxy_data.index)[kk], np.array(proxy_data)[time_index_list[1]+1, kk], 15).date()
-            add_proxies[k].time = pd.Series(date)
-        else:
-            add_proxies[k].time = pd.Series(proxy_data.index).apply(lambda dt: dt.replace(day=15))
-        add_proxies[k].method = ini['additional_proxy_method'][k]
-        add_proxies[k].tag = ini['additional_proxy_tag'][k]
-        add_proxies[k].source = [i, int(ini['additional_proxy_data_col'][k])-1]
-
-    proxies = proxies + add_proxies
-
-    return proxies
 
 
 def load_additional_proxies(proxies, ini):
@@ -1856,9 +1800,6 @@ def save_netCDF(current_data, trends, signi, diagnostic, ini):
 
                 ind_var = f.createVariable('independent_variable_names', 'str', ('n_coefficients',))
                 ind_var[:] = np.array(diagnostic[3])
-                # proxy_var = f.createVariable('proxy', 'S1', ('n_coefficients', 'string_length'), compression="zlib")
-                # for k, s in enumerate(diagnostic[3]):
-                #     proxy_var[k, :len(s)] = np.array(list(s), dtype='S1')
 
                 time_var = f.createVariable('date', 'S10', 'time', compression="zlib")
                 time_var.unit = 'YYYYMMDD'
@@ -2061,98 +2002,6 @@ def get_X_1(nanmask, ini, X_1_string, data):
     return X_1
 
 
-def get_X_2_OLD(proxies, nanmask, X_proxy_size, ini, it, data):
-    mask_time = np.where(nanmask == True)[0]    # Array which has every index of actual values of the original data
-    X_2 = np.zeros((len(nanmask), X_proxy_size), dtype=float)  # Size of the proxy part of the X matrices depends on which method to use for each proxy as well as the seasonal cycle
-    X_2[:] = np.nan
-
-    # Get the latitude, longitude and altitude of the dataset for AOD and limits
-    ind = 0
-    lat = None
-    lon = None
-    alt = None
-
-    for k, i in enumerate(data.dim_array):
-        if i == 'lat' and data.lat is not None:
-            try:
-                lat = data.lat[it.multi_index[ind]]
-            except:
-                lat = data.lat[it.multi_index]
-            ind += 1
-        elif i == 'lon' and data.lon is not None:
-            try:
-                lon = data.lon[it.multi_index[ind]]
-            except:
-                lon = data.lon[it.multi_index]
-            ind += 1
-        elif i == 'alt' and data.lev is not None:
-            try:
-                alt = data.lev[it.multi_index[ind]]
-            except:
-                alt = data.lev[it.multi_index]
-            ind += 1
-
-    col = 0
-
-    # Setting columns as NaNs if they don't fall inbetween the min and max lat and alt specifications of the proxy
-    for i in proxies:
-        if i.method == 0:
-            continue
-        if not is_between(lat, i.lat_min, i.lat_max) or not is_between(alt, i.alt_min, i.alt_max):
-            if i.method == 1:
-                X_2[:, col] = np.nan
-                col += 1
-            elif i.method == 2:
-                for kk in range(i.seas_comp*2 + 1):
-                    X_2[:, col] = np.nan
-                    col += 1
-            elif i.method == 3:
-                for kk in range(12):
-                    X_2[:, col] = np.nan
-                    col += 1
-            continue
-
-        # NOT A GOOD SOLUTION, NEEDS IMPROVEMENT
-        # Get the correct proxy data depending on latitude
-        if len(i.data.shape) > 1:
-            if lat in i.lat:
-                proxy_data = i.data[nanmask, np.where(i.lat == lat)]
-            else:
-                closest_lat = sorted([(lat_close, abs(lat_close - lat)) for lat_close in i.lat], key=lambda x: x[1:])[:2]
-                lat1, lat2 = closest_lat[0][0], closest_lat[1][0]
-                data1, data2 = i.data[nanmask, np.where(i.lat == lat1)[0][0]], i.data[nanmask, np.where(i.lat == lat2)[0][0]]
-                temp_data = np.empty(len(data1))
-                for kk, ii in enumerate(data1):
-                    temp_data[kk] = np.interp(lat, [lat1, lat2], [data1[kk], data2[kk]])
-                proxy_data = temp_data
-        else:
-            proxy_data = i.data[nanmask]
-        if i.method == 0:
-            continue
-        elif i.method == 1:
-            X_2[nanmask, col] = proxy_data
-            col += 1
-        elif i.method == 2:
-            X_2[nanmask, col] = proxy_data
-            col += 1
-            for kk in range(int(i.seas_comp)):
-                X_2[nanmask, col] = proxy_data * np.sin(((kk + 1) * 2 * np.pi * mask_time)/12)
-                col += 1
-                X_2[nanmask, col] = proxy_data * np.cos(((kk + 1) * 2 * np.pi * mask_time)/12)
-                col += 1
-        elif i.method == 3:
-            month_array = np.array(pd.to_datetime(data.time[data.date_start:data.date_end]).month)
-            for kk in range(12):
-                X_2[nanmask, col] = proxy_data
-                X_2[np.where((month_array % 13) != kk+1), col] = 0
-                col += 1
-
-    # Removing all columns with only NaNs (columns that got skipped because of limitations)
-    X_2[~nanmask] = np.nan
-
-    return X_2
-
-
 def get_X_2(proxies, nanmask, X_proxy_size, it, data):
     mask_time = np.where(nanmask == True)[0]    # Array which has every index of actual values of the original data
     X_2 = np.zeros((len(nanmask), X_proxy_size), dtype=float)  # Size of the proxy part of the X matrices depends on which method to use for each proxy as well as the seasonal cycle
@@ -2348,7 +2197,6 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
                 trenda_z = []
                 siga_z = []
                 for keys, indices in groups.items():
-                    # print(keys, indices)
                     if keys[0] == 'intercept':
                         continue
                     if keys[1] == 'month-of-the-year':
@@ -2442,6 +2290,11 @@ def iup_reg_model(data, proxies, ini):
                 elif len(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
                     i.data[kk] = np.nan
                     continue
+                print(i.name)
+                print(ii)
+                print(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1))
+                print(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
+                print(np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)]))
                 i.data[kk] = np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
             i.data = i.data[:len(np.unique(time.year))]
 
@@ -2461,7 +2314,7 @@ def iup_reg_model(data, proxies, ini):
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
 
     while not it.finished:
-        print(str(it.multi_index) + ' Calculating trend with index')
+        print(str(it.multi_index) + ': calculating trend')
 
         data_arr = data.o3[(slice(None),) + it.multi_index]
         data_arr = data_arr[data.date_start:data.date_end]
@@ -2568,17 +2421,21 @@ def iup_reg_model(data, proxies, ini):
 # Putting the proxies, the data and the config.ini into the module will give out the trends as well as the significant values, and a list of data that consists of the X matrix, beta and betaa values, the proxy names and the time series for the proxies
 # trends, signi, diagnostic = iup_reg_model(data, proxies, ini)
 
-def iup_ui(ui=False):
+def iup_ui(ui=False, config='config.ini'):
 
     # Console Arguments
     parser = argparse.ArgumentParser(description="The IUP Regression Model can compute trends from different .netCDF ozone files with a range of default proxies aswell as the option to include additional proxies.")
-    parser.add_argument('-u', '--ui', action='store_true', help='The IUP Regression Model will run with its user interface.')
+    parser.add_argument('-u', '--ui', action='store_true', help='Run the IUP Regression Model with a graphical user interface.')
+    parser.add_argument('-c', '--config', type=str, help='Specify a configuration file for the regression model.')
     args = parser.parse_args()
     if args.ui:
         ui = True
 
+    if args.config:
+        config = args.config
+
     if not ui:
-        ini = load_config_ini('config folder/config.ini')
+        ini = load_config_ini('config folder/' + config)
         data = load_netCDF(ini['data_path'], ini)
         proxies = load_default_proxies(ini)
         proxies = load_additional_proxies(proxies, ini)

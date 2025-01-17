@@ -583,13 +583,6 @@
                <item>
                 <widget class="QWidget" name="widget_10" native="true">
                  <layout class="QGridLayout" name="gridLayout_3">
-                  <item row="0" column="0">
-                   <widget class="QLabel" name="label_11">
-                    <property name="text">
-                     <string>start date:</string>
-                    </property>
-                   </widget>
-                  </item>
                   <item row="0" column="1">
                    <widget class="QLabel" name="dia_data_start">
                     <property name="text">
@@ -603,7 +596,24 @@
                   <item row="1" column="0">
                    <widget class="QLabel" name="label_12">
                     <property name="text">
-                     <string>end date:</string>
+                     <string>end date: </string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="label_15">
+                    <property name="text">
+                     <string>time dimension: </string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QLabel" name="dia_data_nan">
+                    <property name="text">
+                     <string>-</string>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignCenter</set>
                     </property>
                    </widget>
                   </item>
@@ -617,66 +627,22 @@
                     </property>
                    </widget>
                   </item>
-                  <item row="2" column="0">
-                   <widget class="QLabel" name="label_15">
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="label_11">
                     <property name="text">
-                     <string>time dimension:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="2" column="1">
-                   <widget class="QLabel" name="dia_data_time">
-                    <property name="text">
-                     <string>-</string>
-                    </property>
-                    <property name="alignment">
-                     <set>Qt::AlignCenter</set>
+                     <string>start date: </string>
                     </property>
                    </widget>
                   </item>
                   <item row="3" column="0">
                    <widget class="QLabel" name="label_17">
                     <property name="text">
-                     <string>latitude dimension:</string>
+                     <string>NaNs: </string>
                     </property>
                    </widget>
                   </item>
-                  <item row="3" column="1">
-                   <widget class="QLabel" name="dia_data_lat">
-                    <property name="text">
-                     <string>-</string>
-                    </property>
-                    <property name="alignment">
-                     <set>Qt::AlignCenter</set>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="4" column="0">
-                   <widget class="QLabel" name="label_18">
-                    <property name="text">
-                     <string>longitude dimension:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="4" column="1">
-                   <widget class="QLabel" name="dia_data_lon">
-                    <property name="text">
-                     <string>-</string>
-                    </property>
-                    <property name="alignment">
-                     <set>Qt::AlignCenter</set>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="6" column="0">
-                   <widget class="QLabel" name="label_19">
-                    <property name="text">
-                     <string>altitude dimension:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="6" column="1">
-                   <widget class="QLabel" name="dia_data_alt">
+                  <item row="2" column="1">
+                   <widget class="QLabel" name="dia_data_time">
                     <property name="text">
                      <string>-</string>
                     </property>
@@ -701,16 +667,6 @@
                 <widget class="QWidget" name="widget_21" native="true">
                  <layout class="QHBoxLayout" name="horizontalLayout_8">
                   <item>
-                   <widget class="QLabel" name="label_24">
-                    <property name="text">
-                     <string>Time:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QComboBox" name="dia_data_combo_time"/>
-                  </item>
-                  <item>
                    <spacer name="horizontalSpacer_4">
                     <property name="orientation">
                      <enum>Qt::Horizontal</enum>
@@ -724,60 +680,22 @@
                    </spacer>
                   </item>
                   <item>
-                   <widget class="QLabel" name="label_20">
-                    <property name="text">
-                     <string>Latitude:</string>
-                    </property>
+                   <widget class="QWidget" name="data_dim_widget" native="true">
+                    <layout class="QHBoxLayout" name="horizontalLayout_13">
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
                    </widget>
-                  </item>
-                  <item>
-                   <widget class="QComboBox" name="dia_data_combo_lat"/>
-                  </item>
-                  <item>
-                   <spacer name="horizontalSpacer_2">
-                    <property name="orientation">
-                     <enum>Qt::Horizontal</enum>
-                    </property>
-                    <property name="sizeHint" stdset="0">
-                     <size>
-                      <width>40</width>
-                      <height>20</height>
-                     </size>
-                    </property>
-                   </spacer>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="label_22">
-                    <property name="text">
-                     <string>Longitude:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QComboBox" name="dia_data_combo_lon"/>
-                  </item>
-                  <item>
-                   <spacer name="horizontalSpacer_3">
-                    <property name="orientation">
-                     <enum>Qt::Horizontal</enum>
-                    </property>
-                    <property name="sizeHint" stdset="0">
-                     <size>
-                      <width>40</width>
-                      <height>20</height>
-                     </size>
-                    </property>
-                   </spacer>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="label_23">
-                    <property name="text">
-                     <string>Altitude:</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QComboBox" name="dia_data_combo_alt"/>
                   </item>
                  </layout>
                 </widget>
@@ -884,35 +802,20 @@
              <widget class="QWidget" name="widget_17" native="true">
               <layout class="QHBoxLayout" name="horizontalLayout_7">
                <item>
-                <widget class="QWidget" name="widget_18" native="true">
-                 <layout class="QVBoxLayout" name="verticalLayout_15">
-                  <item>
-                   <widget class="QComboBox" name="dia_X_combo"/>
-                  </item>
-                 </layout>
+                <widget class="QLabel" name="label_21">
+                 <property name="text">
+                  <string>dimension:</string>
+                 </property>
                 </widget>
                </item>
                <item>
-                <widget class="QWidget" name="widget_19" native="true">
-                 <layout class="QGridLayout" name="gridLayout_5">
-                  <item row="0" column="1">
-                   <widget class="QLabel" name="dia_X_dim">
-                    <property name="text">
-                     <string>-</string>
-                    </property>
-                    <property name="alignment">
-                     <set>Qt::AlignCenter</set>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="0">
-                   <widget class="QLabel" name="label_21">
-                    <property name="text">
-                     <string>dimension:</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
+                <widget class="QLabel" name="dia_X_dim">
+                 <property name="text">
+                  <string>-</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
                 </widget>
                </item>
               </layout>
@@ -923,6 +826,43 @@
               <layout class="QVBoxLayout" name="verticalLayout_16">
                <item>
                 <widget class="QTableWidget" name="dia_X_table"/>
+               </item>
+               <item>
+                <widget class="QWidget" name="widget_18" native="true">
+                 <layout class="QHBoxLayout" name="horizontalLayout_14">
+                  <item>
+                   <spacer name="horizontalSpacer_2">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>576</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QWidget" name="X_dim_widget" native="true">
+                    <layout class="QHBoxLayout" name="horizontalLayout_15">
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -943,7 +883,7 @@
           <property name="currentIndex">
            <number>0</number>
           </property>
-          <widget class="QWidget" name="figure_widget" native="true">
+          <widget class="QWidget" name="figure_widget">
            <attribute name="title">
             <string>Model</string>
            </attribute>

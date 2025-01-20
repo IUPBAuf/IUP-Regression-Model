@@ -536,12 +536,12 @@ class AppWindow(QtWidgets.QMainWindow):
         # Start trend analysis
         self.compute_button.clicked.connect(self.compute_trends)
 
-        # Plotting
+        # Plotting Model
         self.dim_layout = self.dim_widget.layout()
         self.dim_boxes = []
         self.plot_button.clicked.connect(self.plot_figure)
 
-        # Layout for plotting
+        # Layout for model plotting
         self.layout = QVBoxLayout(self.figure_widget)
         self.canvas = MplCanvas(self.figure_widget)
         self.layout.addWidget(self.canvas)
@@ -610,24 +610,13 @@ class AppWindow(QtWidgets.QMainWindow):
             dims = data.dim_array
 
             with nc.Dataset(save_path + '.nc', 'w') as f:
-                if lat is not None:
-                    f.createDimension('lat', len(lat))
-                    lat_var = f.createVariable('lat', 'f8', ('lat',))
-                    lat_var[:] = lat
-                    lat_var.units = 'degrees_north'
-                    lat_var.long_name = 'latitude'
-                if lon is not None:
-                    f.createDimension('lon', len(lon))
-                    lon_var = f.createVariable('lon', 'f8', ('lon',))
-                    lon_var[:] = lon
-                    lon_var.units = 'degrees_east'
-                    lon_var.long_name = 'longitude'
-                if alt is not None:
-                    f.createDimension('alt', len(alt))
-                    alt_var = f.createVariable('alt', 'f8', ('alt',))
-                    alt_var[:] = alt
-                    alt_var.units = 'km'
-                    alt_var.long_name = 'altitude'
+                var_list = []
+                for k, i in enumerate(dims[1:]):
+                    f.createDimension(i, data.o3.shape[k+1])
+                    var_list.append(f.createVariable(i, 'f8', (i,)))
+                    var_list[k][:] = getattr(data, i)
+                    # var_list[k].units = 'degrees_north'
+                    # lat_var.long_name = 'latitude'
 
                 max_length = max(len(s) for s in self.proxy_string)
                 f.createDimension('n_coefficients', len(self.proxy_string))
@@ -647,8 +636,9 @@ class AppWindow(QtWidgets.QMainWindow):
                 X_var[:] = self.X
                 beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 beta_var[:] = self.betaa
-                covb_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
-                covb_var[:] = self.convbeta
+                # covb_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
+                # print(self.convbeta)
+                # covb_var[:] = self.convbeta
 
                 if len(self.trends.shape) == len(dim_tuple):
                     trend_var = f.createVariable('trend', 'f4', dim_tuple[1:] + ('infl',))
@@ -2459,4 +2449,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

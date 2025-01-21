@@ -433,8 +433,8 @@ class ProxyWindow(QtWidgets.QDialog):
     def save_settings(self):
         # Saves all settings and closes the settings window
         # Save depending on current open page
-        self.ini['additional_proxy_name'] = np.append(self.ini['additional_proxy_name'], self.proxy_name.text())
         self.ini['additional_proxy_path'] = np.append(self.ini['additional_proxy_path'], self.file)
+        self.ini['additional_proxy_name'] = np.append(self.ini['additional_proxy_name'], self.proxy_name.text())
         if self.proxy_widget.currentIndex() == 0:
             for widget in self.variable_stacked_widget.children():
                 if isinstance(widget, QtWidgets.QFrame):
@@ -539,7 +539,7 @@ class AppWindow(QtWidgets.QMainWindow):
         # Plotting Model
         self.dim_layout = self.dim_widget.layout()
         self.dim_boxes = []
-        self.plot_button.clicked.connect(self.plot_figure)
+        self.plot_button.clicked.connect(self.plot_model_figure)
 
         # Layout for model plotting
         self.layout = QVBoxLayout(self.figure_widget)
@@ -701,14 +701,16 @@ class AppWindow(QtWidgets.QMainWindow):
         # Fill Table
         if len(self.proxies[index].data.shape) >= 2:
             sec_dim = self.proxies[index].data.shape[1]
+            self.dia_proxy_table.setColumnCount(sec_dim)
+            self.dia_proxy_table.setHorizontalHeaderLabels(getattr(self.proxies[index], self.proxies[index].tag).astype(str))
         else:
             sec_dim = 1
-        self.dia_proxy_table.setColumnCount(sec_dim)
+            self.dia_proxy_table.setColumnCount(sec_dim)
         self.dia_proxy_table.setRowCount(self.proxies[index].data.shape[0])
 
         self.dia_proxy_table.setVerticalHeaderLabels(self.proxies[index].time.astype(str))
 
-        # Not really pretty, but works for now
+
         for k, i in enumerate(self.proxies[index].data):
             if sec_dim == 1:
                 self.dia_proxy_table.setItem(k, 0, QTableWidgetItem(str(self.proxies[index].data[k])))
@@ -1093,15 +1095,15 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def compute_trends(self):
         self.setDisabled(True)
-        self.trends, self.signi, self.diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
+        self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
         self.setDisabled(False)
 
-        self.X = self.diagnostic[0]
-        self.beta = self.diagnostic[1]
-        self.betaa = self.diagnostic[2]
-        self.convbeta = self.diagnostic[3]
-        self.proxy_string = self.diagnostic[4]
-        self.time = self.diagnostic[5]
+        self.X = diagnostic[0]
+        self.beta = diagnostic[1]
+        self.betaa = diagnostic[2]
+        self.convbeta = diagnostic[3]
+        self.proxy_string = diagnostic[4]
+        self.time = diagnostic[5]
         self.current_ini = copy.copy(self.ini)
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
 
@@ -1197,7 +1199,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.dia_data_time.setText(str(len(date)))
         self.dia_data_nan.setText(str(np.sum(np.isnan(matrix.filled(np.nan)))))
 
-    def plot_figure(self):
+    def plot_model_figure(self):
         # Clear the figure
         self.canvas.figure.clf()
 
@@ -1244,7 +1246,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
         plot_number = 1
-        print(slope_beta)
+        # print(slope_beta)
         self.canvas.axes_list = [self.canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
         bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
@@ -1266,6 +1268,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
+            ax.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         toolbar = NavigationToolbar(self.canvas, self)
 
         self.canvas.draw()
@@ -1401,7 +1404,6 @@ def get_proxy_time_overlap(ini, proxies, data):
     for i in new_proxies:
         if date_end > np.array(i.time)[-1] and i.method != 0:
             date_end = np.array(i.time)[np.max(np.where(np.isin(np.array(i.time), new_data.time))[0])]
-            # date_end = np.array(i.time)[np.max(np.where(np.in1d(np.array(i.time), new_data.time))[0])]
 
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0]
@@ -1644,8 +1646,6 @@ def load_add_proxy_file(ini, prox_num):
         else:
             time = pd.Series([parse_time(year, format=format, month=None) for year in dataset.variables[time_col][:]])
         setattr(proxy, 'time', time)
-        # time = pd.Series(dataset.variables[time_col][:]).apply(lambda index: parse_time(index, format=format, month=month_col))
-        # setattr(proxy, 'time', dataset.variables[time_col][:])
         if len(dependencies) >= 2:
             setattr(proxy, tag, dataset.variables[dependencies[1]][:])
             setattr(proxy, 'tag', tag)
@@ -1658,7 +1658,6 @@ def load_add_proxy_file(ini, prox_num):
             proxy_raw.index = pd.Series([parse_time(year, format=format, month=month)for year, month in zip(proxy_raw.index.to_series(), pd.Series(np.array(proxy_raw)[:, month_col]))])
         else:
             proxy_raw.index = pd.Series([parse_time(year, format=format, month=None) for year in proxy_raw.index.to_series()])
-        # proxy_raw.index = proxy_raw.index.to_series().apply(parse_time, month=month, format=format)
 
         if tag:
             tag_values = list(map(float, tag_values.split(',')))
@@ -1676,6 +1675,13 @@ def load_add_proxy_file(ini, prox_num):
         proxy.source = [file, proxy_col]
         proxy.method = method
         proxy.seas_comp = seas
+
+    # If the proxy data is 2 dimensional, reshape the data so the time dimensions is the first
+    time_dim_index = proxy.data.shape.index(proxy.time.size)
+    if time_dim_index != 0:
+        new_order = [time_dim_index] + [i for i in range(proxy.data.ndim) if i != time_dim_index]
+        proxy.data = np.transpose(proxy.data, axes=new_order)
+    proxy.time = proxy.time.apply(lambda dt: dt.replace(day=15))
 
     return proxy
 
@@ -2290,11 +2296,6 @@ def iup_reg_model(data, proxies, ini):
                 elif len(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
                     i.data[kk] = np.nan
                     continue
-                print(i.name)
-                print(ii)
-                print(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1))
-                print(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
-                print(np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)]))
                 i.data[kk] = np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
             i.data = i.data[:len(np.unique(time.year))]
 
@@ -2357,7 +2358,7 @@ def iup_reg_model(data, proxies, ini):
 
         # Inquery if there are enough datapoints to even calculate a trend
         if len(mask_time) / len(nanmask) < float(ini.get('skip_percentage', 0.75)):
-            print('Not long enough')
+            print('Not enough values to compute the trend! ' + f'{len(mask_time) / len(nanmask)*100:.2f}' + '% of data available.')
             it.iternext()
             continue
 

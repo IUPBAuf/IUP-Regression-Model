@@ -8,6 +8,7 @@ import copy
 import netCDF4 as nc
 import datetime as dt
 import re
+import math
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -23,7 +24,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.4'
+ver = 'alpha 1.5'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -540,11 +541,17 @@ class AppWindow(QtWidgets.QMainWindow):
         self.dim_layout = self.dim_widget.layout()
         self.dim_boxes = []
         self.plot_button.clicked.connect(self.plot_model_figure)
-
-        # Layout for model plotting
         self.layout = QVBoxLayout(self.figure_widget)
         self.canvas = MplCanvas(self.figure_widget)
         self.layout.addWidget(self.canvas)
+
+        # Plotting Contour
+        self.dim_con_layout = self.dim_con_widget.layout()
+        self.dim_con_boxes = []
+        self.plot_button_con.clicked.connect(self.plot_contour_figure)
+        self.con_layout = QVBoxLayout(self.contour_widget)
+        self.con_canvas = MplCanvas(self.contour_widget)
+        self.con_layout.addWidget(self.con_canvas)
 
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
@@ -1104,15 +1111,19 @@ class AppWindow(QtWidgets.QMainWindow):
         self.convbeta = diagnostic[3]
         self.proxy_string = diagnostic[4]
         self.time = diagnostic[5]
+        self.trend_data = diagnostic[6]
         self.current_ini = copy.copy(self.ini)
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
 
+        # Enable Plotting
         self.plot_button.setDisabled(False)
 
         self.clear_dim_widgets(self.dim_layout)
         self.populate_dim_widget()
         self.clear_dim_widgets(self.dim_X_layout)
         self.populate_X_dim_widget()
+        self.clear_dim_widgets(self.dim_con_layout)
+        self.populate_con_dim_widget()
 
     def clear_dim_widgets(self, layout):
         if layout is not None:
@@ -1162,6 +1173,46 @@ class AppWindow(QtWidgets.QMainWindow):
             self.dim_X_layout.addLayout(col_layout)
         self.X_diagnostic()
 
+    def populate_con_dim_widget(self):
+        self.dim_con_boxes.clear()
+
+        for dim_index in range(1, len(self.current_data.o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
+            col_layout.addWidget(label)
+
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.current_data, self.current_data.dim_array[dim_index])
+            combo.addItem('---X Axis---')
+            combo.addItem('---Y Axis---')
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+            combo.currentIndexChanged.connect(self.sync_combo_boxes)
+
+            self.dim_con_boxes.append(combo)
+
+            self.dim_con_layout.addLayout(col_layout)
+        self.dim_con_boxes[1].setCurrentIndex(1)
+
+    def sync_combo_boxes(self):
+        # Get the indices of all combo boxes
+        current_indices = [combo.currentIndex() for combo in self.dim_con_boxes]
+
+        if 0 in current_indices and 1 in current_indices:
+            self.plot_button_con.setDisabled(False)
+        else:
+            self.plot_button_con.setDisabled(True)
+
+        sender_index = self.sender().currentIndex()
+        if sender_index in {0, 1}:
+            for i, combo in enumerate(self.dim_con_boxes):
+                if combo != self.sender() and combo.currentIndex() == sender_index:
+                    # Find a new valid index for the conflicting combo box
+                    for new_index in range(combo.count()):
+                        if new_index not in {0, 1} and new_index != sender_index:
+                            combo.setCurrentIndex(new_index)
+                            break
+
     def X_diagnostic(self):
         indices = [combo.currentIndex() for combo in self.dim_X_boxes]
         matrix = self.X[(slice(None), *indices, slice(None))]
@@ -1210,20 +1261,22 @@ class AppWindow(QtWidgets.QMainWindow):
         plot_indices = [combo.currentIndex() for combo in self.dim_boxes]
         indices = tuple([slice(None)] + list(plot_indices))
 
-        X = data.time
-        Y = data.o3[indices]
+        X_og = data.time
+        X = self.time
+        Y_og = data.o3[indices]
+        Y = self.trend_data[indices]
 
         valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
 
         time = pd.DatetimeIndex(data.time)
 
-        if self.anomaly_check.isChecked() and self.radio_abs.isChecked():
-            for k in range(12):
-                Y[time.month == k + 1] = data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
-        elif self.anomaly_check.isChecked() and self.radio_rel.isChecked():
-            for k in range(12):
-                Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
+        # if self.anomaly_check.isChecked() and self.radio_abs.isChecked():
+        #     for k in range(12):
+        #         Y[time.month == k + 1] = data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
+        # elif self.anomaly_check.isChecked() and self.radio_rel.isChecked():
+        #     for k in range(12):
+        #         Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
 
         Y_trend = self.trends[tuple(plot_indices)]
         if not isinstance(Y_trend, (list, np.ndarray)):
@@ -1249,13 +1302,16 @@ class AppWindow(QtWidgets.QMainWindow):
         # print(slope_beta)
         self.canvas.axes_list = [self.canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
-        bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
+        # bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
+        bounds = np.arange(-9, 10, 1, dtype=int)
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.canvas.axes_list):
+            if X_og.shape != X.shape:
+                ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
@@ -1272,6 +1328,65 @@ class AppWindow(QtWidgets.QMainWindow):
         toolbar = NavigationToolbar(self.canvas, self)
 
         self.canvas.draw()
+
+    def plot_contour_figure(self):
+        # Clear the figure
+        self.con_canvas.figure.clf()
+
+        trends = self.trends
+        signi = self.signi
+
+        data = copy.deepcopy(self.current_data)
+        # Get dimension combo boxes indices
+        plot_indices = ()
+        for k, combo in enumerate(self.dim_con_boxes):
+            if combo.currentIndex() == 0:
+                plot_indices += (slice(None),)
+                x_grid = getattr(data, data.dim_array[1:][k])
+            elif combo.currentIndex() == 1:
+                plot_indices += (slice(None),)
+                y_grid = getattr(data, data.dim_array[1:][k])
+            else:
+                plot_indices += (combo.currentIndex() + 2,)
+        if trends[plot_indices].shape != (len(y_grid), len(x_grid)):
+            trend = trends[plot_indices].T
+        else:
+            trend = trends[plot_indices]
+
+        # Calculate max and min for both axis
+        magnitude = 10 ** int(math.log10(max(abs(np.nanmax(x_grid)), abs(np.nanmin(x_grid)))))
+        x_max = math.ceil(np.nanmax(x_grid) / magnitude) * magnitude
+        x_min = math.floor(np.nanmin(x_grid) / magnitude) * magnitude
+        magnitude = 10 ** int(math.log10(max(abs(np.nanmax(y_grid)), abs(np.nanmin(y_grid)))))
+        y_max = math.ceil(np.nanmax(y_grid) / magnitude) * magnitude
+        y_min = math.floor(np.nanmin(y_grid) / magnitude) * magnitude
+
+        self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
+
+        bounds = np.arange(-9, 10, 1, dtype=int)
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
+        cmap.set_under(plt.get_cmap('RdBu_r')(0))
+        cmap.set_over(plt.get_cmap('RdBu_r')(255))
+        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+        cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
+        self.con_canvas.axes.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
+        # self.con_canvas.axes.contourf(x_grid, y_grid, uncertainty, levels=[0, 0.5], colors='none', color="r", hatches=['\\\\'])
+        # self.con_canvas.axes.contourf(x_grid, y_grid, uncertainty, levels=[0, 0.5], colors='#FCFCFC', norm=norm, alpha=0.5)
+        self.con_canvas.axes.set_xlim([x_min, x_max])
+        self.con_canvas.axes.set_ylim([y_min, y_max])
+        self.con_canvas.axes.tick_params(axis='both')
+        # ax.set_title(titles[k])
+
+        # self.con_canvas.figure.text(0.45, 0.01, 'Latitude', ha='center', va='center', rotation='horizontal', fontsize=22)
+        self.con_canvas.figure.subplots_adjust(right=0.9, left=0.05, top=0.95, bottom=0.08, hspace=0.25, wspace=0.08)
+        # self.con_canvas.figure.text(0.01, 0.5, 'Altitude [km]', ha='center', va='center', rotation='vertical', fontsize=22)
+        cbar = self.con_canvas.figure.add_axes([0.92, 0.1, 0.018, 0.8])
+        cbar2 = self.con_canvas.figure.colorbar(cf, cax=cbar, label='[%/decade]')
+
+        cbar2.set_ticks(bounds)
+        toolbar = NavigationToolbar(self.con_canvas, self)
+
+        self.con_canvas.draw()
 
     def print_ini(self):
         print('brian@iup.physik.uni-bremen.de')
@@ -2310,6 +2425,7 @@ def iup_reg_model(data, proxies, ini):
                 data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]      # Change inflection point to reflect the yearly data
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+    data_all = np.empty(X_all.shape[:-1])
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
@@ -2388,10 +2504,11 @@ def iup_reg_model(data, proxies, ini):
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean
         beta_all[it.multi_index + (slice(None),)][~col_mask] = beta
         betaa_all[it.multi_index + (slice(None),)][~col_mask] = betaa
-
+        data_all[(slice(None),) + it.multi_index] = data_arr
         # Go to next iteration:
         it.iternext()
-    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[data.date_start:data.date_end][time_log]]
+
+    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[data.date_start:data.date_end][time_log], data_all]
 
     return trenda_z, siga_z, diagnostic
 

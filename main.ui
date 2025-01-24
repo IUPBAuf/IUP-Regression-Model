@@ -1010,6 +1010,13 @@
                 </widget>
                </item>
                <item>
+                <widget class="QCheckBox" name="con_uncertainty">
+                 <property name="text">
+                  <string>Uncertainty</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <spacer name="horizontalSpacer_3">
                  <property name="orientation">
                   <enum>Qt::Horizontal</enum>

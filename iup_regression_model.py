@@ -17,6 +17,7 @@ import matplotlib.patheffects as pe
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
@@ -1334,7 +1335,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.con_canvas.figure.clf()
 
         trends = self.trends
-        signi = self.signi
+        signis = self.signi
 
         data = copy.deepcopy(self.current_data)
         # Get dimension combo boxes indices
@@ -1343,47 +1344,59 @@ class AppWindow(QtWidgets.QMainWindow):
             if combo.currentIndex() == 0:
                 plot_indices += (slice(None),)
                 x_grid = getattr(data, data.dim_array[1:][k])
+                x_label = data.dim_array[1:][k]
             elif combo.currentIndex() == 1:
                 plot_indices += (slice(None),)
                 y_grid = getattr(data, data.dim_array[1:][k])
+                y_label = data.dim_array[1:][k]
             else:
                 plot_indices += (combo.currentIndex() + 2,)
         if trends[plot_indices].shape != (len(y_grid), len(x_grid)):
             trend = trends[plot_indices].T
+            signi = signis[plot_indices].T > 2
         else:
             trend = trends[plot_indices]
+            signi = signis[plot_indices] > 2
 
         # Calculate max and min for both axis
-        magnitude = 10 ** int(math.log10(max(abs(np.nanmax(x_grid)), abs(np.nanmin(x_grid)))))
-        x_max = math.ceil(np.nanmax(x_grid) / magnitude) * magnitude
-        x_min = math.floor(np.nanmin(x_grid) / magnitude) * magnitude
-        magnitude = 10 ** int(math.log10(max(abs(np.nanmax(y_grid)), abs(np.nanmin(y_grid)))))
-        y_max = math.ceil(np.nanmax(y_grid) / magnitude) * magnitude
-        y_min = math.floor(np.nanmin(y_grid) / magnitude) * magnitude
+        row_start, row_end = np.where(np.any(~np.isnan(trend), axis=1))[0][[0, -1]]
+        col_start, col_end = np.where(np.any(~np.isnan(trend), axis=0))[0][[0, -1]]
+
+        # print(col_start, col_end)
+        # print(row_start, row_end)
+        magnitude = 10 ** int(math.log10(max(abs(y_grid[row_start]), abs(y_grid[row_end]), 1)))
+        y_min = math.floor(y_grid[row_start] / magnitude) * magnitude
+        y_max = math.ceil((y_grid[row_end]) / magnitude) * magnitude
+
+        magnitude = 10 ** int(math.log10(max(abs(x_grid[col_start]), abs(x_grid[col_end]), 1)))
+        x_min = math.floor(x_grid[col_start] / magnitude) * magnitude
+        x_max = math.ceil((x_grid[col_end]) / magnitude) * magnitude
 
         self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
 
         bounds = np.arange(-9, 10, 1, dtype=int)
+        # bounds = [-5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5]
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
         cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
         self.con_canvas.axes.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
-        # self.con_canvas.axes.contourf(x_grid, y_grid, uncertainty, levels=[0, 0.5], colors='none', color="r", hatches=['\\\\'])
-        # self.con_canvas.axes.contourf(x_grid, y_grid, uncertainty, levels=[0, 0.5], colors='#FCFCFC', norm=norm, alpha=0.5)
+        if self.con_uncertainty.isChecked() == True:
+            self.con_canvas.axes.contourf(x_grid, y_grid, signi, levels=[0, 0.5], colors='none', hatches=['\\\\'])
+            self.con_canvas.axes.contourf(x_grid, y_grid, signi, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.5)
         self.con_canvas.axes.set_xlim([x_min, x_max])
         self.con_canvas.axes.set_ylim([y_min, y_max])
         self.con_canvas.axes.tick_params(axis='both')
-        # ax.set_title(titles[k])
+        # self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
+        self.con_canvas.axes.set_xlabel(x_label, fontsize=14)
+        self.con_canvas.axes.set_ylabel(y_label, fontsize=14)
 
-        # self.con_canvas.figure.text(0.45, 0.01, 'Latitude', ha='center', va='center', rotation='horizontal', fontsize=22)
-        self.con_canvas.figure.subplots_adjust(right=0.9, left=0.05, top=0.95, bottom=0.08, hspace=0.25, wspace=0.08)
-        # self.con_canvas.figure.text(0.01, 0.5, 'Altitude [km]', ha='center', va='center', rotation='vertical', fontsize=22)
-        cbar = self.con_canvas.figure.add_axes([0.92, 0.1, 0.018, 0.8])
-        cbar2 = self.con_canvas.figure.colorbar(cf, cax=cbar, label='[%/decade]')
-
-        cbar2.set_ticks(bounds)
+        divider = make_axes_locatable(self.con_canvas.axes)
+        cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
+        cbar = self.con_canvas.figure.colorbar(cf, cax=cbar_ax, label='[%/decade]')
+        cbar.set_ticks(bounds)
+        self.con_canvas.figure.tight_layout()
         toolbar = NavigationToolbar(self.con_canvas, self)
 
         self.con_canvas.draw()
@@ -1762,7 +1775,7 @@ def load_add_proxy_file(ini, prox_num):
             time = pd.Series([parse_time(year, format=format, month=None) for year in dataset.variables[time_col][:]])
         setattr(proxy, 'time', time)
         if len(dependencies) >= 2:
-            setattr(proxy, tag, dataset.variables[dependencies[1]][:])
+            setattr(proxy, tag, dataset.variables[dependencies[dependencies.index(tag)]][:])
             setattr(proxy, 'tag', tag)
 
     else:

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib
 import matplotlib.patheffects as pe
+import matplotlib.patches as patches
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -495,6 +496,9 @@ class AppWindow(QtWidgets.QMainWindow):
         if self.data_list.count() > 0:
             self.data_list.setCurrentRow(0)
 
+        self.combo_pairs = {}
+        self.populate_dim_limits()
+
         self.load_presets()
 
         self.proxies = load_default_proxies(self.ini)
@@ -525,6 +529,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.radio_rel.toggled.connect(self.anomaly_method_toggle)
         self.radio_abs.toggled.connect(self.anomaly_method_toggle)
         self.preset_combo.currentIndexChanged.connect(self.change_preset)
+        self.data_list.currentItemChanged.connect(self.data_change)
 
         # Diagnostic UI functions
         self.dia_proxy_combo.currentIndexChanged.connect(self.proxy_diagnostic)
@@ -599,6 +604,23 @@ class AppWindow(QtWidgets.QMainWindow):
             self.anomaly_check.setChecked(True)
         else:
             self.anomaly_check.setChecked(False)
+
+        for k, dim in enumerate(self.list_of_data[self.data_list.currentRow()].dim_array):
+            if dim == 'time':
+                continue
+            else:
+                min_combo, max_combo = self.combo_pairs[dim]
+                limits = self.ini.get('additional_var_' + str(k + 1) + '_limit', None)
+                if not limits:
+                    continue
+                elif ',' in limits:
+                    min, max = list(map(int, self.ini.get('additional_var_' + str(k + 1) + '_limit', None).split(",")))
+                    min_combo.setCurrentIndex(min)
+                    max_combo.setCurrentIndex(max)
+                else:
+                    limits = int(self.ini.get('additional_var_' + str(k + 1) + '_limit', None))
+                    min_combo.setCurrentIndex(limits)
+                    max_combo.setCurrentIndex(limits)
 
     def save_file(self):
         # Stop the function if nothing was computed yet
@@ -1098,33 +1120,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
 
     def data_change(self):
-        # Change the time format to the current dataset time format
-        self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
+        # self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
 
-    def compute_trends(self):
-        self.setDisabled(True)
-        self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
-        self.setDisabled(False)
-
-        self.X = diagnostic[0]
-        self.beta = diagnostic[1]
-        self.betaa = diagnostic[2]
-        self.convbeta = diagnostic[3]
-        self.proxy_string = diagnostic[4]
-        self.time = diagnostic[5]
-        self.trend_data = diagnostic[6]
-        self.current_ini = copy.copy(self.ini)
-        self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
-
-        # Enable Plotting
-        self.plot_button.setDisabled(False)
-
-        self.clear_dim_widgets(self.dim_layout)
-        self.populate_dim_widget()
-        self.clear_dim_widgets(self.dim_X_layout)
-        self.populate_X_dim_widget()
-        self.clear_dim_widgets(self.dim_con_layout)
-        self.populate_con_dim_widget()
+        self.populate_dim_limits()
 
     def clear_dim_widgets(self, layout):
         if layout is not None:
@@ -1195,14 +1193,82 @@ class AppWindow(QtWidgets.QMainWindow):
             self.dim_con_layout.addLayout(col_layout)
         self.dim_con_boxes[1].setCurrentIndex(1)
 
+    def lim_update_min(self, dim, index):
+        min_combo, max_combo = self.combo_pairs[dim]
+        if index > max_combo.currentIndex():
+            max_combo.setCurrentIndex(index)  # Adjust max to match min
+        dim_index = self.list_of_data[self.data_list.currentRow()].dim_array.index(dim)
+        self.ini['additional_var_' + str(dim_index + 1) + '_limit'] = str(min_combo.currentIndex()) + ', ' + str(max_combo.currentIndex())
+
+    def lim_update_max(self, dim, index):
+        min_combo, max_combo = self.combo_pairs[dim]
+        if index < min_combo.currentIndex():
+            min_combo.setCurrentIndex(index)  # Adjust min to match max
+        dim_index = self.list_of_data[self.data_list.currentRow()].dim_array.index(dim)
+        self.ini['additional_var_' + str(dim_index + 1) + '_limit'] = str(min_combo.currentIndex()) + ', ' + str(max_combo.currentIndex())
+
+    def populate_dim_limits(self):
+        data = self.list_of_data[self.data_list.currentRow()]
+        # Clear existing widgets in data_lim_box
+        for i in reversed(range(self.data_lim_box.layout().count())):
+            widget = self.data_lim_box.layout().itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+
+        self.combo_pairs.clear()
+
+        # Get dimensions except 'time'
+        dimensions = [dim for dim in data.dim_array if dim != 'time']
+
+        main_layout = self.data_lim_box.layout()
+        if main_layout is None:
+            main_layout = QVBoxLayout()
+            self.data_lim_box.setLayout(main_layout)
+
+        # Loop through each dimension and create a pair of combo boxes
+        for dim in dimensions:
+            widget = QtWidgets.QWidget()  # Container widget
+            h_layout = QHBoxLayout(widget)  # Horizontal layout for combo box pairs
+
+            dim_values = list(map(str, getattr(data, dim)))
+            # First combo box with label
+            vbox1 = QVBoxLayout()
+            label1 = QtWidgets.QLabel(f"{dim} Min:")
+            combo1 = QtWidgets.QComboBox()
+            combo1.addItems(dim_values)  # Populate with data
+            vbox1.addWidget(label1)
+            vbox1.addWidget(combo1)
+
+            # Second combo box with label
+            vbox2 = QVBoxLayout()
+            label2 = QtWidgets.QLabel(f"{dim} Max:")
+            combo2 = QtWidgets.QComboBox()
+            combo2.addItems(dim_values)
+            combo2.setCurrentIndex(len(dim_values) - 1)
+            vbox2.addWidget(label2)
+            vbox2.addWidget(combo2)
+
+            self.combo_pairs[dim] = (combo1, combo2)
+
+            # Connect signals to slot functions
+            combo1.currentIndexChanged.connect(lambda index, d=dim: self.lim_update_min(d, index))
+            combo2.currentIndexChanged.connect(lambda index, d=dim: self.lim_update_max(d, index))
+
+            # Add both vertical layouts to the horizontal layout
+            h_layout.addLayout(vbox1)
+            h_layout.addLayout(vbox2)
+
+            # Add the widget container to the group box layout
+            main_layout.addWidget(widget)
+
     def sync_combo_boxes(self):
         # Get the indices of all combo boxes
         current_indices = [combo.currentIndex() for combo in self.dim_con_boxes]
 
-        if 0 in current_indices and 1 in current_indices:
-            self.plot_button_con.setDisabled(False)
-        else:
-            self.plot_button_con.setDisabled(True)
+        # Disable the plot button if X- and Y-axis are not picked exactly once and if one of these has not enough values
+        valid_indices = current_indices.count(0) == 1 and current_indices.count(1) == 1
+        valid_lengths = all(self.dim_con_boxes[i].count() > 3 for i, idx in enumerate(current_indices) if idx in (0, 1))
+        self.plot_button_con.setDisabled(not (valid_indices and valid_lengths))
 
         sender_index = self.sender().currentIndex()
         if sender_index in {0, 1}:
@@ -1311,8 +1377,8 @@ class AppWindow(QtWidgets.QMainWindow):
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.canvas.axes_list):
-            if X_og.shape != X.shape:
-                ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
+            if X_og.shape != X.shape and not self.anomaly_check.isChecked():
+                    ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
@@ -1325,7 +1391,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
-            ax.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
+            ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         toolbar = NavigationToolbar(self.canvas, self)
 
         self.canvas.draw()
@@ -1338,6 +1404,7 @@ class AppWindow(QtWidgets.QMainWindow):
         signis = self.signi
 
         data = copy.deepcopy(self.current_data)
+
         # Get dimension combo boxes indices
         plot_indices = ()
         for k, combo in enumerate(self.dim_con_boxes):
@@ -1350,43 +1417,60 @@ class AppWindow(QtWidgets.QMainWindow):
                 y_grid = getattr(data, data.dim_array[1:][k])
                 y_label = data.dim_array[1:][k]
             else:
-                plot_indices += (combo.currentIndex() + 2,)
+                plot_indices += (combo.currentIndex() - 2,)
         if trends[plot_indices].shape != (len(y_grid), len(x_grid)):
             trend = trends[plot_indices].T
             signi = signis[plot_indices].T > 2
         else:
             trend = trends[plot_indices]
             signi = signis[plot_indices] > 2
-
+        masked_uncertainty = np.where(np.isnan(trend), np.nan, signi)
         # Calculate max and min for both axis
-        row_start, row_end = np.where(np.any(~np.isnan(trend), axis=1))[0][[0, -1]]
-        col_start, col_end = np.where(np.any(~np.isnan(trend), axis=0))[0][[0, -1]]
-
-        # print(col_start, col_end)
-        # print(row_start, row_end)
-        magnitude = 10 ** int(math.log10(max(abs(y_grid[row_start]), abs(y_grid[row_end]), 1)))
-        y_min = math.floor(y_grid[row_start] / magnitude) * magnitude
-        y_max = math.ceil((y_grid[row_end]) / magnitude) * magnitude
-
-        magnitude = 10 ** int(math.log10(max(abs(x_grid[col_start]), abs(x_grid[col_end]), 1)))
-        x_min = math.floor(x_grid[col_start] / magnitude) * magnitude
-        x_max = math.ceil((x_grid[col_end]) / magnitude) * magnitude
+        # row_start, row_end = np.where(np.any(~np.isnan(trend), axis=1))[0][[0, -1]]
+        # col_start, col_end = np.where(np.any(~np.isnan(trend), axis=0))[0][[0, -1]]
+        #
+        # # print(col_start, col_end)
+        # # print(row_start, row_end)
+        # magnitude = 10 ** int(math.log10(max(abs(y_grid[row_start]), abs(y_grid[row_end]), 1)))
+        # y_min = math.floor(y_grid[row_start] / magnitude) * magnitude
+        # y_max = math.ceil((y_grid[row_end]) / magnitude) * magnitude
+        #
+        # magnitude = 10 ** int(math.log10(max(abs(x_grid[col_start]), abs(x_grid[col_end]), 1)))
+        # x_min = math.floor(x_grid[col_start] / magnitude) * magnitude
+        # x_max = math.ceil((x_grid[col_end]) / magnitude) * magnitude
 
         self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
 
-        bounds = np.arange(-9, 10, 1, dtype=int)
-        # bounds = [-5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5]
+        # bounds = np.arange(-9, 10, 1, dtype=int)
+        bounds = [-7, -5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7]
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
-        cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
-        self.con_canvas.axes.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
-        if self.con_uncertainty.isChecked() == True:
-            self.con_canvas.axes.contourf(x_grid, y_grid, signi, levels=[0, 0.5], colors='none', hatches=['\\\\'])
-            self.con_canvas.axes.contourf(x_grid, y_grid, signi, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.5)
-        self.con_canvas.axes.set_xlim([x_min, x_max])
-        self.con_canvas.axes.set_ylim([y_min, y_max])
+
+        if self.con_alternative.isChecked() == True:
+            cf = self.con_canvas.axes.imshow(trend, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto')
+            if self.con_uncertainty.isChecked() == True:
+                for i in range(trend.shape[0]):
+                    for j in range(trend.shape[1]):
+                        if not masked_uncertainty[i, j]:
+                            if i+1 == trend.shape[0] and j+1 == trend.shape[1]:
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i] - y_grid[i - 1]), hatch="////", fill=False, edgecolor='black'))
+                            elif i+1 == trend.shape[0]:
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i] - y_grid[i-1]), hatch="////", fill=False, edgecolor='black'))
+                            elif j+1 == trend.shape[1]:
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i + 1] - y_grid[i]), hatch="////", fill=False, edgecolor='black'))
+                            else:
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i + 1] - y_grid[i]), hatch="////", fill=False, edgecolor='black'))
+                            # self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[0] + (x_grid[0]-x_grid[1])/2 + j * (x_grid[1] - x_grid[0]), y_grid[0] + (y_grid[0]-y_grid[1])/2 + i * (y_grid[1] - y_grid[0])), (x_grid[1] - x_grid[0]), (y_grid[1] - y_grid[0]), hatch="////", fill=False, edgecolor='black'))
+        else:
+            cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
+            self.con_canvas.axes.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
+            if self.con_uncertainty.isChecked() == True:
+                self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='none', hatches=['\\\\'])
+                self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.65)
+        self.con_canvas.axes.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
+        self.con_canvas.axes.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
         self.con_canvas.axes.tick_params(axis='both')
         # self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         self.con_canvas.axes.set_xlabel(x_label, fontsize=14)
@@ -1403,6 +1487,32 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def print_ini(self):
         print('brian@iup.physik.uni-bremen.de')
+
+    def compute_trends(self):
+        self.setDisabled(True)
+        self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
+        self.setDisabled(False)
+
+        self.X = diagnostic[0]
+        self.beta = diagnostic[1]
+        self.betaa = diagnostic[2]
+        self.convbeta = diagnostic[3]
+        self.proxy_string = diagnostic[4]
+        self.time = diagnostic[5]
+        self.trend_data = diagnostic[6]
+        self.current_ini = copy.copy(self.ini)
+        self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
+        self.current_data = set_data_limits(self.current_data, self.current_ini)
+
+        # Enable Plotting
+        self.plot_button.setDisabled(False)
+
+        self.clear_dim_widgets(self.dim_layout)
+        self.populate_dim_widget()
+        self.clear_dim_widgets(self.dim_X_layout)
+        self.populate_X_dim_widget()
+        self.clear_dim_widgets(self.dim_con_layout)
+        self.populate_con_dim_widget()
 
 
 def load_config_ini(ini_path):
@@ -1552,6 +1662,29 @@ def get_proxy_time_overlap(ini, proxies, data):
     #         new_proxies[k].data = i.data[(i.time >= date_start.replace(day=15)) & (i.time <= date_end.replace(day=15))]
 
     return new_data, new_proxies
+
+
+def set_data_limits(data, ini):
+    slices = []
+
+    for k, dim in enumerate(data.dim_array):
+        if dim == 'time':
+            slices.append(slice(None))  # Keep all time values
+        else:
+            limits = ini.get('additional_var_' + str(k + 1) + '_limit', None)
+            if not limits:
+                continue
+            elif ',' in limits:
+                min, max = list(map(int, ini.get('additional_var_' + str(k + 1) + '_limit', None).split(",")))
+                slices.append(slice(min, max + 1))
+                setattr(data, dim, getattr(data, dim)[slice(min, max + 1)])
+            else:
+                limits = int(ini.get('additional_var_' + str(k + 1) + '_limit', None))
+                slices.append(slice(limits, limits + 1))
+                setattr(data, dim, [getattr(data, dim)[limits]])
+
+    data.o3 = data.o3[tuple(slices)]
+    return data
 
 
 def convert_to_datetime(time, ini=None):
@@ -1775,7 +1908,7 @@ def load_add_proxy_file(ini, prox_num):
             time = pd.Series([parse_time(year, format=format, month=None) for year in dataset.variables[time_col][:]])
         setattr(proxy, 'time', time)
         if len(dependencies) >= 2:
-            setattr(proxy, tag, dataset.variables[dependencies[dependencies.index(tag)]][:])
+            setattr(proxy, tag, dataset.variables[dependencies[dependencies.index(tag_values)]][:])
             setattr(proxy, 'tag', tag)
 
     else:
@@ -2353,6 +2486,7 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
 # Main program to run
 def iup_reg_model(data, proxies, ini):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
+    data = set_data_limits(data, ini)
 
     # Get index of the inflection point
     data.inflection_index = get_inflection_index(ini, data)

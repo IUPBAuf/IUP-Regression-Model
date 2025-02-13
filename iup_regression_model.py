@@ -26,7 +26,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.5'
+ver = 'alpha 1.6'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -2480,7 +2480,11 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
         siga_z = [np.nan] * len(trend_string_index)
         print('Failed to calculate the trend and significants')
 
-    return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
+    if len(trenda_z) == 1:
+        return trenda_z.pop(), siga_z.pop(), beta, betaa, np.diag(covbetaa)
+    else:
+        return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
+
 
 
 # Main program to run
@@ -2533,10 +2537,9 @@ def iup_reg_model(data, proxies, ini):
     groups = get_string_groups(X_string)
 
     if check == 0:
-        X_all = np.empty((data.o3[data.date_start:data.date_end, ...].shape + (len(X_string),)), dtype='f4') * np.nan
-
+        X_all = np.full((data.o3[data.date_start:data.date_end, ...].shape + (len(X_string),)), np.nan, dtype='f4')
     elif check == 1:
-        X_all = np.empty(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+        X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
                 if len(np.nonzero(i.data[np.where(time.year == ii)])[0]) / len(np.where(time.year == ii)[0]) <= float(ini.get('skip_percentage', 0.75)):
@@ -2550,7 +2553,7 @@ def iup_reg_model(data, proxies, ini):
     elif check == 2:
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
-        X_all = np.empty(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+        X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
                 if kk * 12 > len(time):
@@ -2651,7 +2654,7 @@ def iup_reg_model(data, proxies, ini):
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean
         beta_all[it.multi_index + (slice(None),)][~col_mask] = beta
         betaa_all[it.multi_index + (slice(None),)][~col_mask] = betaa
-        data_all[(slice(None),) + it.multi_index] = data_arr
+        data_all[(slice(None),) + it.multi_index] = data_arr.filled(np.nan)
         # Go to next iteration:
         it.iternext()
 

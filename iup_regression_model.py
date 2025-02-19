@@ -544,20 +544,36 @@ class AppWindow(QtWidgets.QMainWindow):
         self.compute_button.clicked.connect(self.compute_trends)
 
         # Plotting Model
-        self.dim_layout = self.dim_widget.layout()
-        self.dim_boxes = []
-        self.plot_button.clicked.connect(self.plot_model_figure)
-        self.layout = QVBoxLayout(self.figure_widget)
-        self.canvas = MplCanvas(self.figure_widget)
-        self.layout.addWidget(self.canvas)
+        self.dim_model_layout = self.dim_model_widget.layout()
+        self.dim_model_boxes = []
+        self.plot_button_model.clicked.connect(self.plot_model_figure)
+        self.model_layout = QVBoxLayout(self.model_fig_widget)
+        self.model_canvas = MplCanvas(self.model_fig_widget)
+        self.model_layout.addWidget(self.model_canvas)
 
         # Plotting Contour
         self.dim_con_layout = self.dim_con_widget.layout()
         self.dim_con_boxes = []
         self.plot_button_con.clicked.connect(self.plot_contour_figure)
-        self.con_layout = QVBoxLayout(self.contour_widget)
-        self.con_canvas = MplCanvas(self.contour_widget)
+        self.con_layout = QVBoxLayout(self.contour_fig_widget)
+        self.con_canvas = MplCanvas(self.contour_fig_widget)
         self.con_layout.addWidget(self.con_canvas)
+
+        # Plotting Residuals
+        self.dim_resi_layout = self.dim_resi_widget.layout()
+        self.dim_resi_boxes = []
+        self.plot_button_resi.clicked.connect(self.plot_resi_figure)
+        self.resi_layout = QVBoxLayout(self.resi_fig_widget)
+        self.resi_canvas = MplCanvas(self.resi_fig_widget)
+        self.resi_layout.addWidget(self.resi_canvas)
+
+        # Plotting Measurement Density
+        self.dim_cell_layout = self.dim_cell_widget.layout()
+        self.dim_cell_boxes = []
+        # self.plot_button_cell.clicked.connect(self.plot_observations_figure)
+        self.cell_layout = QVBoxLayout(self.cell_fig_widget)
+        self.cell_canvas = MplCanvas(self.cell_fig_widget)
+        self.cell_layout.addWidget(self.cell_canvas)
 
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
@@ -1136,8 +1152,18 @@ class AppWindow(QtWidgets.QMainWindow):
                     if child_layout is not None:
                         self.clear_dim_widgets(child_layout)
 
-    def populate_dim_widget(self):
-        self.dim_boxes.clear()
+    def populate_dim_widgets_1d(self, var_string):
+        boxes_name = 'dim_' + var_string + '_boxes'
+        layout_name = 'dim_' + var_string + '_layout'
+        button_name = 'plot_button_' + var_string
+
+        boxes = getattr(self, boxes_name, None)
+        layout = getattr(self, layout_name, None)
+        button = getattr(self, button_name, None)
+
+        button.setDisabled(False)
+
+        boxes.clear()
 
         for dim_index in range(1, len(self.current_data.o3.shape)):
             col_layout = QVBoxLayout()
@@ -1149,9 +1175,39 @@ class AppWindow(QtWidgets.QMainWindow):
             combo.addItems([str(value) for value in values])
             col_layout.addWidget(combo)
 
-            self.dim_boxes.append(combo)
+            boxes.append(combo)
 
-            self.dim_layout.addLayout(col_layout)
+            layout.addLayout(col_layout)
+
+    def populate_dim_widgets_2d(self, var_string):
+        boxes_name = 'dim_' + var_string + '_boxes'
+        layout_name = 'dim_' + var_string + '_layout'
+        button_name = 'plot_button_' + var_string
+
+        boxes = getattr(self, boxes_name, None)
+        layout = getattr(self, layout_name, None)
+        button = getattr(self, button_name, None)
+
+        boxes.clear()
+
+        for dim_index in range(1, len(self.current_data.o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
+            col_layout.addWidget(label)
+
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.current_data, self.current_data.dim_array[dim_index])
+            combo.addItem('---X Axis---')
+            combo.addItem('---Y Axis---')
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+            combo.currentIndexChanged.connect(lambda: self.sync_combo_boxes(var_string))
+
+            boxes.append(combo)
+
+            layout.addLayout(col_layout)
+        for k, i in enumerate(self.dim_con_boxes):
+            i.setCurrentIndex(k)
 
     def populate_X_dim_widget(self):
         self.dim_X_boxes.clear()
@@ -1171,27 +1227,6 @@ class AppWindow(QtWidgets.QMainWindow):
 
             self.dim_X_layout.addLayout(col_layout)
         self.X_diagnostic()
-
-    def populate_con_dim_widget(self):
-        self.dim_con_boxes.clear()
-
-        for dim_index in range(1, len(self.current_data.o3.shape)):
-            col_layout = QVBoxLayout()
-            label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
-            col_layout.addWidget(label)
-
-            combo = QtWidgets.QComboBox()
-            values = getattr(self.current_data, self.current_data.dim_array[dim_index])
-            combo.addItem('---X Axis---')
-            combo.addItem('---Y Axis---')
-            combo.addItems([str(value) for value in values])
-            col_layout.addWidget(combo)
-            combo.currentIndexChanged.connect(self.sync_combo_boxes)
-
-            self.dim_con_boxes.append(combo)
-
-            self.dim_con_layout.addLayout(col_layout)
-        self.dim_con_boxes[1].setCurrentIndex(1)
 
     def lim_update_min(self, dim, index):
         min_combo, max_combo = self.combo_pairs[dim]
@@ -1261,18 +1296,20 @@ class AppWindow(QtWidgets.QMainWindow):
             # Add the widget container to the group box layout
             main_layout.addWidget(widget)
 
-    def sync_combo_boxes(self):
+    def sync_combo_boxes(self, var_string):
         # Get the indices of all combo boxes
-        current_indices = [combo.currentIndex() for combo in self.dim_con_boxes]
+        boxes = getattr(self, 'dim_' + var_string + '_boxes', None)
+        button = getattr(self, 'plot_button_' + var_string, None)
+        current_indices = [combo.currentIndex() for combo in boxes]
 
         # Disable the plot button if X- and Y-axis are not picked exactly once and if one of these has not enough values
         valid_indices = current_indices.count(0) == 1 and current_indices.count(1) == 1
         valid_lengths = all(self.dim_con_boxes[i].count() > 3 for i, idx in enumerate(current_indices) if idx in (0, 1))
-        self.plot_button_con.setDisabled(not (valid_indices and valid_lengths))
+        button.setDisabled(not (valid_indices and valid_lengths))
 
         sender_index = self.sender().currentIndex()
         if sender_index in {0, 1}:
-            for i, combo in enumerate(self.dim_con_boxes):
+            for i, combo in enumerate(boxes):
                 if combo != self.sender() and combo.currentIndex() == sender_index:
                     # Find a new valid index for the conflicting combo box
                     for new_index in range(combo.count()):
@@ -1319,24 +1356,25 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def plot_model_figure(self):
         # Clear the figure
-        self.canvas.figure.clf()
+        self.model_canvas.figure.clf()
 
         # Preparing Plot values
         data = copy.deepcopy(self.current_data)
 
         # Get dimension combo boxes indices
-        plot_indices = [combo.currentIndex() for combo in self.dim_boxes]
+        plot_indices = [combo.currentIndex() for combo in self.dim_model_boxes]
         indices = tuple([slice(None)] + list(plot_indices))
-
-        X_og = data.time
-        X = self.time
-        Y_og = data.o3[indices]
-        Y = self.trend_data[indices]
 
         valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
 
-        time = pd.DatetimeIndex(data.time)
+        X_og = data.time
+        Y_og = data.o3[indices]
+        Y = self.trend_data[indices]
+        X = self.time
+        X_slope = copy.deepcopy(self.time[valid_rows])
+
+        # time = pd.DatetimeIndex(data.time)
 
         # if self.anomaly_check.isChecked() and self.radio_abs.isChecked():
         #     for k in range(12):
@@ -1356,18 +1394,28 @@ class AppWindow(QtWidgets.QMainWindow):
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
         for key, i in str_groups.items():
-            if key[1] == 'month-of-the-year':
-                slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
-                slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
+            if key[0] == 'proxy':
+                continue
             else:
-                slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
-                slope_X.append(self.X[indices][:, i[0]])
-        trend_string = "\n".join([f"trend {k+1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
+                if key[1] == 'month-of-the-year':
+                    slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
+                    slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
+                else:
+                    slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
+                    slope_X.append(self.X[indices][:, i[0]])
+        trend_string = "\n".join([f"trend {k + 1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
 
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
+        Y_slope = Y_slope[valid_rows]
         plot_number = 1
-        # print(slope_beta)
-        self.canvas.axes_list = [self.canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
+
+        # Include a breakpoint if there are inflection points
+        if self.current_ini.get('inflection_point', None):
+            breakpoint_index = np.where(self.time[valid_rows] >= dt.datetime.strptime(self.current_ini.get('inflection_point'), '%Y-%m').date())[0][0]
+            X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
+            Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+
+        self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
         # bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
         bounds = np.arange(-9, 10, 1, dtype=int)
@@ -1376,25 +1424,25 @@ class AppWindow(QtWidgets.QMainWindow):
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
-        for k, ax in enumerate(self.canvas.axes_list):
+        for k, ax in enumerate(self.model_canvas.axes_list):
             if X_og.shape != X.shape and not self.anomaly_check.isChecked():
                     ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
-            ax.plot(self.time[valid_rows], Y_slope[valid_rows], path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+            ax.plot(X_slope, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
             y_label_cor = 0.025
-            self.canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
+            self.model_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
             x_label_cor = 0.02
-            self.canvas.figure.text(x_label_cor, 0.5, 'Number Density [molec/cm³]', ha='center', va='center', rotation='vertical', fontsize=12)
+            self.model_canvas.figure.text(x_label_cor, 0.5, 'Number Density [molec/cm³]', ha='center', va='center', rotation='vertical', fontsize=12)
             ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
-            ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
-        toolbar = NavigationToolbar(self.canvas, self)
+            ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_model_boxes]))))
+        toolbar = NavigationToolbar(self.model_canvas, self)
 
-        self.canvas.draw()
+        self.model_canvas.draw()
 
     def plot_contour_figure(self):
         # Clear the figure
@@ -1441,8 +1489,8 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
 
-        # bounds = np.arange(-9, 10, 1, dtype=int)
-        bounds = [-7, -5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7]
+        bounds = np.arange(-10, 11, 1, dtype=int)
+        # bounds = [-7, -5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7]
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
@@ -1471,6 +1519,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.65)
         self.con_canvas.axes.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
         self.con_canvas.axes.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
+        if self.con_invert.isChecked() == True:
+            self.con_canvas.axes.set_ylim(self.con_canvas.axes.get_ylim()[::-1])
         self.con_canvas.axes.tick_params(axis='both')
         # self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         self.con_canvas.axes.set_xlabel(x_label, fontsize=14)
@@ -1485,6 +1535,87 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.con_canvas.draw()
 
+    def plot_resi_figure(self):
+        # Clear the figure
+        self.resi_canvas.figure.clf()
+
+        # Preparing Plot values
+        data = copy.deepcopy(self.current_data)
+
+        # Get dimension combo boxes indices
+        plot_indices = [combo.currentIndex() for combo in self.dim_resi_boxes]
+        indices = tuple([slice(None)] + list(plot_indices))
+
+        Y = self.trend_data[indices]
+
+        valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
+        X = copy.deepcopy(self.time[valid_rows])
+
+        Y_trend = self.trends[tuple(plot_indices)]
+        if not isinstance(Y_trend, (list, np.ndarray)):
+            Y_trend = [Y_trend]
+
+        slope_beta = []
+        slope_X = []
+        resi_beta = []
+        resi_X = []
+
+        str_groups = get_string_groups(self.proxy_string)
+        for key, i in str_groups.items():
+            if key[0] == 'proxy' or key[0] == 'intercept':
+                if key[1] == 'month-of-the-year':
+                    resi_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
+                    resi_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
+                else:
+                    resi_beta.append(self.betaa[tuple(plot_indices)][i[0]])
+                    resi_X.append(self.X[indices][:, i[0]])
+            elif key[0] == 'trend':
+                if key[1] == 'month-of-the-year':
+                    slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
+                    slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
+                else:
+                    slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
+                    slope_X.append(self.X[indices][:, i[0]])
+
+        trend_string = "\n".join([f"trend {k + 1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
+
+        Y_slope = np.array(slope_X).T @ np.array(slope_beta)
+        Y_slope = Y_slope[valid_rows]
+        Y_all_but_trend = np.array(resi_X).T @ np.array(resi_beta)
+        Y_resi = Y - Y_all_but_trend
+        plot_number = 1
+
+        # Include a breakpoint if there are inflection points
+        if self.current_ini.get('inflection_point', None):
+            breakpoint_index = np.where(self.time[valid_rows] >= dt.datetime.strptime(self.current_ini.get('inflection_point'), '%Y-%m').date())[0][0]
+            X = np.insert(X, breakpoint_index, X[breakpoint_index])
+            Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+
+        self.resi_canvas.axes_list = [self.resi_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
+
+        # bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
+        bounds = np.arange(-9, 10, 1, dtype=int)
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
+        cmap.set_under(plt.get_cmap('RdBu_r')(0))
+        cmap.set_over(plt.get_cmap('RdBu_r')(255))
+        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+
+        for k, ax in enumerate(self.resi_canvas.axes_list):
+            ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals', linewidth=1.8)
+            ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+            y_label_cor = 0.025
+            self.resi_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
+            x_label_cor = 0.02
+            self.resi_canvas.figure.text(x_label_cor, 0.5, 'Number Density [molec/cm³]', ha='center', va='center', rotation='vertical', fontsize=12)
+            ax.legend(loc='upper right')
+
+            props = dict(boxstyle='round', facecolor='white', alpha=1)
+            ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
+            ax.set_title(data.name + '\n residuals at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_resi_boxes]))))
+        toolbar = NavigationToolbar(self.resi_canvas, self)
+
+        self.resi_canvas.draw()
+
     def print_ini(self):
         print('brian@iup.physik.uni-bremen.de')
 
@@ -1496,7 +1627,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.X = diagnostic[0]
         self.beta = diagnostic[1]
         self.betaa = diagnostic[2]
-        self.convbeta = diagnostic[3]
+        self.covbeta = diagnostic[3]
         self.proxy_string = diagnostic[4]
         self.time = diagnostic[5]
         self.trend_data = diagnostic[6]
@@ -1504,15 +1635,16 @@ class AppWindow(QtWidgets.QMainWindow):
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
         self.current_data = set_data_limits(self.current_data, self.current_ini)
 
-        # Enable Plotting
-        self.plot_button.setDisabled(False)
-
-        self.clear_dim_widgets(self.dim_layout)
-        self.populate_dim_widget()
+        self.clear_dim_widgets(self.dim_model_layout)
+        self.populate_dim_widgets_1d('model')
         self.clear_dim_widgets(self.dim_X_layout)
         self.populate_X_dim_widget()
         self.clear_dim_widgets(self.dim_con_layout)
-        self.populate_con_dim_widget()
+        self.populate_dim_widgets_2d('con')
+        self.clear_dim_widgets(self.dim_resi_layout)
+        self.populate_dim_widgets_1d('resi')
+        self.clear_dim_widgets(self.dim_cell_layout)
+        self.populate_dim_widgets_2d('cell')
 
 
 def load_config_ini(ini_path):
@@ -1777,29 +1909,43 @@ def get_string_groups(string_list):
     # This function will look into a list of strings and create a dictionary with different groups and their respective indices of the original list
     pattern_group = re.compile(r'(intercept|trend) #(\d+)')
     pattern_no_group = re.compile(r'(intercept|trend)')
+
     groups = {}
     attribute_list = ['single', 'harmonic', 'month-of-the-year']
 
     for k, i in enumerate(string_list):
         match = pattern_group.search(i)
         index = [kk for kk, s in enumerate(attribute_list) if s in i]
-        if index[0] == None:
-            continue
-        if match and attribute_list[index[0]] in i:
-            type_ = match.group(1)
-            number = int(match.group(2))
-            key = (type_, str(attribute_list[index[0]]), number)
-            if key not in groups:
-                groups[key] = []
-            groups[key].append(k)
+        if index:
+            index = index[0]  # Only take the first match
         else:
-            match = pattern_no_group.search(i)
-            if match and attribute_list[index[0]] in i:
+            index = None
+
+        if index is not None:
+            if match and attribute_list[index] in i:
                 type_ = match.group(1)
-                key = (type_, str(attribute_list[index[0]]), None)
+                number = int(match.group(2))
+                key = (type_, attribute_list[index], number)
                 if key not in groups:
                     groups[key] = []
                 groups[key].append(k)
+            else:
+                match = pattern_no_group.search(i)
+                if match and attribute_list[index] in i:
+                    type_ = match.group(1)
+                    key = (type_, attribute_list[index], None)
+                    if key not in groups:
+                        groups[key] = []
+                    groups[key].append(k)
+                else:
+                    # Does not match either "trend" or "intercept" -> proxy
+                    parts = i.split(' - ')
+                    name, attribute, number = parts[:3]
+
+                    key = ('proxy', attribute_list[index], None, name)
+                    if key not in groups:
+                        groups[key] = []
+                    groups[key].append(k)
     return groups
 
 
@@ -2464,7 +2610,7 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
                 trenda_z = []
                 siga_z = []
                 for keys, indices in groups.items():
-                    if keys[0] == 'intercept':
+                    if keys[0] == 'intercept' or keys[0] == 'proxy':
                         continue
                     if keys[1] == 'month-of-the-year':
                         trenda_z.append(np.nanmean(betaa[indices]) * mult)
@@ -2553,6 +2699,7 @@ def iup_reg_model(data, proxies, ini):
     elif check == 2:
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
+
         X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
@@ -2563,13 +2710,6 @@ def iup_reg_model(data, proxies, ini):
                     continue
                 i.data[kk] = np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
             i.data = i.data[:len(np.unique(time.year))]
-
-            # for kk, ii in enumerate(np.unique(time.year)):
-            #     if len(np.in1d(time[time.year == ii].month, month_index).nonzero()[0])/len(month_index) <= 0.8:     # If there are less than 80% of the values in this year, skip it
-            #         i.data[kk] = np.nan
-            #         continue
-            #     i.data[kk] = np.nanmean(i.data[np.where(time.year == ii)][np.in1d(time[time.year == ii].month, month_index)])
-            # i.data = i.data[:len(np.unique(time.year))]
         if getattr(data, 'inflection_index', None)[0]:
             for k, i in enumerate(data.inflection_index):
                 data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]      # Change inflection point to reflect the yearly data
@@ -2607,6 +2747,7 @@ def iup_reg_model(data, proxies, ini):
         elif check == 2:
             for k, i in enumerate(np.unique(time.year)):
                 time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
+                # print(time_index)
                 if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
                     data_arr[k] = np.nan
                     continue
@@ -2717,4 +2858,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

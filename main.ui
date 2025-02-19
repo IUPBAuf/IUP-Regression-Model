@@ -307,14 +307,14 @@
                  <item row="0" column="0">
                   <widget class="QLabel" name="label_8">
                    <property name="text">
-                    <string>Month for averaging</string>
+                    <string>Months averaged</string>
                    </property>
                   </widget>
                  </item>
                  <item row="0" column="1">
                   <widget class="QLineEdit" name="mean_line">
                    <property name="toolTip">
-                    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Currently averaged months:&lt;/p&gt;&lt;p&gt;Months must be written with their respective number, seperated by &amp;quot;,&amp;quot;. To get a yearly average, use either &amp;quot;yearly&amp;quot; or &amp;quot;all&amp;quot;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Currently averaged months:&lt;/p&gt;&lt;p&gt;Months must be written with their respective number, seperated by &amp;quot;,&amp;quot;. To get a yearly average, use either &amp;quot;yearly&amp;quot; or &amp;quot;all&amp;quot;.&lt;br/&gt;For example to get a December, January and February average, the input number should be 1,2, 12. The order does not matter in this case, but the start date will determine which year will be used.&lt;br/&gt;With a starting date of 2000-01, the dates that will get used for this year will be 2000-01, 2000-02 and 2000-12.&lt;br/&gt;With a starting date of 1999-12, the dates that will get used for this year will be 1999-12, 2000-01 and 2000-02.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
                    </property>
                   </widget>
                  </item>
@@ -897,7 +897,7 @@
            </attribute>
            <layout class="QVBoxLayout" name="verticalLayout_15">
             <item>
-             <widget class="QWidget" name="figure_widget" native="true"/>
+             <widget class="QWidget" name="model_fig_widget" native="true"/>
             </item>
             <item>
              <widget class="QWidget" name="widget_16" native="true">
@@ -921,7 +921,7 @@
                 <number>0</number>
                </property>
                <item>
-                <widget class="QPushButton" name="plot_button">
+                <widget class="QPushButton" name="plot_button_model">
                  <property name="enabled">
                   <bool>false</bool>
                  </property>
@@ -950,7 +950,7 @@
                 </spacer>
                </item>
                <item>
-                <widget class="QWidget" name="dim_widget" native="true">
+                <widget class="QWidget" name="dim_model_widget" native="true">
                  <layout class="QHBoxLayout" name="horizontalLayout_12">
                   <property name="leftMargin">
                    <number>0</number>
@@ -978,7 +978,7 @@
            </attribute>
            <layout class="QVBoxLayout" name="verticalLayout_20">
             <item>
-             <widget class="QWidget" name="contour_widget" native="true"/>
+             <widget class="QWidget" name="contour_fig_widget" native="true"/>
             </item>
             <item>
              <widget class="QWidget" name="widget_19" native="true">
@@ -1032,6 +1032,13 @@
                 </widget>
                </item>
                <item>
+                <widget class="QCheckBox" name="con_invert">
+                 <property name="text">
+                  <string>Invert Y-Axis</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <spacer name="horizontalSpacer_3">
                  <property name="orientation">
                   <enum>Qt::Horizontal</enum>
@@ -1067,15 +1074,162 @@
             </item>
            </layout>
           </widget>
-          <widget class="QWidget" name="resi_widget">
+          <widget class="QWidget" name="resi_widget_page">
            <attribute name="title">
             <string>Residual</string>
            </attribute>
+           <layout class="QVBoxLayout" name="verticalLayout_23">
+            <item>
+             <widget class="QWidget" name="resi_fig_widget" native="true"/>
+            </item>
+            <item>
+             <widget class="QWidget" name="widget_26" native="true">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <layout class="QHBoxLayout" name="horizontalLayout_20">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QPushButton" name="plot_button_resi">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="text">
+                  <string>Plot</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer_7">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>488</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QWidget" name="dim_resi_widget" native="true">
+                 <layout class="QHBoxLayout" name="horizontalLayout_21">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </widget>
-          <widget class="QWidget" name="cell_widget">
+          <widget class="QWidget" name="cell_widget_page">
            <attribute name="title">
             <string>Observations</string>
            </attribute>
+           <layout class="QVBoxLayout" name="verticalLayout_22">
+            <item>
+             <widget class="QWidget" name="cell_fig_widget" native="true"/>
+            </item>
+            <item>
+             <widget class="QWidget" name="widget_27" native="true">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <layout class="QHBoxLayout" name="horizontalLayout_18">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QPushButton" name="plot_button_cell">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="text">
+                  <string>Plot</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="cell_invert">
+                 <property name="text">
+                  <string>Invert Y-Axis</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer_6">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>407</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QWidget" name="dim_cell_widget" native="true">
+                 <layout class="QHBoxLayout" name="horizontalLayout_19">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </widget>
         </item>

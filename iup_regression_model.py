@@ -575,6 +575,16 @@ class AppWindow(QtWidgets.QMainWindow):
         self.cell_canvas = MplCanvas(self.cell_fig_widget)
         self.cell_layout.addWidget(self.cell_canvas)
 
+        # Plotting Proxies
+        self.dim_proxy_layout = self.dim_proxy_widget.layout()
+        self.dim_proxy_layout_checks = self.dim_proxy_widget_checks.layout()
+        self.dim_proxy_boxes = []
+        self.dim_proxy_checks = []
+        self.plot_button_proxy.clicked.connect(self.plot_proxy_figure)
+        self.proxy_layout = QVBoxLayout(self.proxy_fig_widget)
+        self.proxy_canvas = MplCanvas(self.proxy_fig_widget)
+        self.proxy_layout.addWidget(self.proxy_canvas)
+
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
         self.menu_load_data.triggered.connect(self.open_data_dialog)
@@ -1209,6 +1219,25 @@ class AppWindow(QtWidgets.QMainWindow):
         for k, i in enumerate(self.dim_con_boxes):
             i.setCurrentIndex(k)
 
+    def populate_dim_widgets_proxy(self):
+        checks = self.dim_proxy_checks
+        layout = self.dim_proxy_layout_checks
+
+        checks.clear()
+
+        str_groups = get_string_groups(self.proxy_string)
+        for key, i in str_groups.items():
+            if key[0] == 'proxy':
+                col_layout = QVBoxLayout()
+
+                check = QtWidgets.QCheckBox()
+                check.setText(key[3])
+                col_layout.addWidget(check)
+
+                checks.append(check)
+
+                layout.addLayout(col_layout)
+
     def populate_X_dim_widget(self):
         self.dim_X_boxes.clear()
 
@@ -1374,15 +1403,6 @@ class AppWindow(QtWidgets.QMainWindow):
         X = self.time
         X_slope = copy.deepcopy(self.time[valid_rows])
 
-        # time = pd.DatetimeIndex(data.time)
-
-        # if self.anomaly_check.isChecked() and self.radio_abs.isChecked():
-        #     for k in range(12):
-        #         Y[time.month == k + 1] = data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
-        # elif self.anomaly_check.isChecked() and self.radio_rel.isChecked():
-        #     for k in range(12):
-        #         Y[time.month == k + 1] = (data.o3[indices][time.month == k + 1] - np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))) / np.nanmean(data.o3[indices][time.month == k + 1].filled(np.nan))
-
         Y_trend = self.trends[tuple(plot_indices)]
         if not isinstance(Y_trend, (list, np.ndarray)):
             Y_trend = [Y_trend]
@@ -1473,19 +1493,6 @@ class AppWindow(QtWidgets.QMainWindow):
             trend = trends[plot_indices]
             signi = signis[plot_indices] > 2
         masked_uncertainty = np.where(np.isnan(trend), np.nan, signi)
-        # Calculate max and min for both axis
-        # row_start, row_end = np.where(np.any(~np.isnan(trend), axis=1))[0][[0, -1]]
-        # col_start, col_end = np.where(np.any(~np.isnan(trend), axis=0))[0][[0, -1]]
-        #
-        # # print(col_start, col_end)
-        # # print(row_start, row_end)
-        # magnitude = 10 ** int(math.log10(max(abs(y_grid[row_start]), abs(y_grid[row_end]), 1)))
-        # y_min = math.floor(y_grid[row_start] / magnitude) * magnitude
-        # y_max = math.ceil((y_grid[row_end]) / magnitude) * magnitude
-        #
-        # magnitude = 10 ** int(math.log10(max(abs(x_grid[col_start]), abs(x_grid[col_end]), 1)))
-        # x_min = math.floor(x_grid[col_start] / magnitude) * magnitude
-        # x_max = math.ceil((x_grid[col_end]) / magnitude) * magnitude
 
         self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
 
@@ -1616,6 +1623,52 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.resi_canvas.draw()
 
+    def plot_proxy_figure(self):
+        # Clear the figure
+        self.proxy_canvas.figure.clf()
+
+        # Get dimension combo boxes indices
+        plot_indices = [combo.currentIndex() for combo in self.dim_proxy_boxes]
+        indices = tuple([slice(None)] + list(plot_indices))
+        X = copy.deepcopy(self.X[indices])
+        beta = copy.deepcopy(self.betaa[tuple(plot_indices)])
+        checks = [check.isChecked() for check in self.dim_proxy_checks]
+        if not any(checks):
+            return      # Stops the function if nothing was checked
+
+        valid_rows = ~np.isnan(X).all(axis=1)
+        date = copy.deepcopy(self.time[valid_rows])
+
+        Y = []
+        Y_label = []
+
+        str_groups = get_string_groups(self.proxy_string)
+
+        check_idx = 0
+        for key, i in str_groups.items():
+            if key[0] == 'proxy':
+                if checks[check_idx]:
+                    Y.append(np.array(X[:, i]) @ np.array(beta[i]))
+                    Y_label.append(key[-1])
+                check_idx += 1
+
+        self.proxy_canvas.axes_list = [self.proxy_canvas.figure.add_subplot(len(Y), 1, i + 1) for i in range(len(Y))]
+        colors = plt.cm.viridis(np.linspace(0, 1, len(Y)))
+
+        for k, ax in enumerate(self.proxy_canvas.axes_list):
+            ax.plot(date, Y[k][valid_rows], label=Y_label[k], color=colors[k], linewidth=1.8)
+            ax.yaxis.set_label_position("right")
+            ax.set_ylabel(Y_label[k])
+            if k < len(self.proxy_canvas.axes_list) - 1:
+                ax.set_xticklabels([])
+                ax.tick_params(axis='x', which='both', length=0)
+
+        self.proxy_canvas.figure.subplots_adjust(hspace=0.5)
+        self.proxy_canvas.figure.text(0.45, 0.025, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
+
+        self.proxy_canvas.draw_idle()
+        self.proxy_canvas.flush_events()
+
     def print_ini(self):
         print('brian@iup.physik.uni-bremen.de')
 
@@ -1645,6 +1698,10 @@ class AppWindow(QtWidgets.QMainWindow):
         self.populate_dim_widgets_1d('resi')
         self.clear_dim_widgets(self.dim_cell_layout)
         self.populate_dim_widgets_2d('cell')
+        self.clear_dim_widgets(self.dim_proxy_layout_checks)
+        self.populate_dim_widgets_proxy()
+        self.clear_dim_widgets(self.dim_proxy_layout)
+        self.populate_dim_widgets_1d('proxy')
 
 
 def load_config_ini(ini_path):
@@ -2366,7 +2423,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
             elif ini['inflection_method'] == 'pwl':
                 val = 1
             elif ini['inflection_method'] == 'ind':
-                if first_part == True:  # UGLY, needs fixing
+                if first_part == True:  # UGLY, needs improvement
                     val[:data.inflection_index[0]] = 1
                 else:
                     val[data.inflection_index[0]:] = 1
@@ -2708,6 +2765,7 @@ def iup_reg_model(data, proxies, ini):
                 elif len(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
                     i.data[kk] = np.nan
                     continue
+                # Always calculates a yearly mean, not a seasonal mean of the proxies
                 i.data[kk] = np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
             i.data = i.data[:len(np.unique(time.year))]
         if getattr(data, 'inflection_index', None)[0]:
@@ -2747,7 +2805,6 @@ def iup_reg_model(data, proxies, ini):
         elif check == 2:
             for k, i in enumerate(np.unique(time.year)):
                 time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
-                # print(time_index)
                 if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
                     data_arr[k] = np.nan
                     continue

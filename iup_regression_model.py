@@ -15,6 +15,7 @@ import matplotlib as mpl
 import matplotlib
 import matplotlib.patheffects as pe
 import matplotlib.patches as patches
+from cmcrameri import cm
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -1510,13 +1511,13 @@ class AppWindow(QtWidgets.QMainWindow):
                     for j in range(trend.shape[1]):
                         if not masked_uncertainty[i, j]:
                             if i+1 == trend.shape[0] and j+1 == trend.shape[1]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i] - y_grid[i - 1]), hatch="////", fill=False, edgecolor='black'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i] - y_grid[i - 1]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
                             elif i+1 == trend.shape[0]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i] - y_grid[i-1]), hatch="////", fill=False, edgecolor='black'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i] - y_grid[i-1]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
                             elif j+1 == trend.shape[1]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i + 1] - y_grid[i]), hatch="////", fill=False, edgecolor='black'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
                             else:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i + 1] - y_grid[i]), hatch="////", fill=False, edgecolor='black'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
                             # self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[0] + (x_grid[0]-x_grid[1])/2 + j * (x_grid[1] - x_grid[0]), y_grid[0] + (y_grid[0]-y_grid[1])/2 + i * (y_grid[1] - y_grid[0])), (x_grid[1] - x_grid[0]), (y_grid[1] - y_grid[0]), hatch="////", fill=False, edgecolor='black'))
         else:
             cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
@@ -1555,6 +1556,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         Y = self.trend_data[indices]
 
+        valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
         X = copy.deepcopy(self.time[valid_rows])
 
@@ -1586,10 +1588,12 @@ class AppWindow(QtWidgets.QMainWindow):
 
         trend_string = "\n".join([f"trend {k + 1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
 
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
         Y_slope = Y_slope[valid_rows]
         Y_all_but_trend = np.array(resi_X).T @ np.array(resi_beta)
         Y_resi = Y - Y_all_but_trend
+        Y_resi_2 = Y[valid_rows] - Y_model
         plot_number = 1
 
         # Include a breakpoint if there are inflection points
@@ -1608,7 +1612,8 @@ class AppWindow(QtWidgets.QMainWindow):
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.resi_canvas.axes_list):
-            ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals', linewidth=1.8)
+            ax.plot(self.time[valid_rows], Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
+            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals', linewidth=1.8)
             ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
             y_label_cor = 0.025
             self.resi_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
@@ -1636,8 +1641,13 @@ class AppWindow(QtWidgets.QMainWindow):
         if not any(checks):
             return      # Stops the function if nothing was checked
 
-        valid_rows = ~np.isnan(X).all(axis=1)
+        valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
+        valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
         date = copy.deepcopy(self.time[valid_rows])
+
+        Y_og = self.trend_data[indices][valid_rows]
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
+        Y_resi = Y_og - Y_model
 
         Y = []
         Y_label = []
@@ -1653,9 +1663,10 @@ class AppWindow(QtWidgets.QMainWindow):
                 check_idx += 1
 
         self.proxy_canvas.axes_list = [self.proxy_canvas.figure.add_subplot(len(Y), 1, i + 1) for i in range(len(Y))]
-        colors = plt.cm.viridis(np.linspace(0, 1, len(Y)))
+        colors = cm.cmaps['hawaii'](np.linspace(0, 1, len(Y)))
 
         for k, ax in enumerate(self.proxy_canvas.axes_list):
+            ax.plot(date, Y[k][valid_rows] + Y_resi, label=Y_label[k] + ' + residual', color='black', linewidth=1.4)
             ax.plot(date, Y[k][valid_rows], label=Y_label[k], color=colors[k], linewidth=1.8)
             ax.yaxis.set_label_position("right")
             ax.set_ylabel(Y_label[k])

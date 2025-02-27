@@ -995,6 +995,12 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + ', '.join(string) + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
             else:
                 self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + 'all' + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
+            for row in range(self.frozen_list.rowCount()):
+                if int(self.frozen_list.cellWidget(row, 1).currentIndex()) >= 2:
+                    self.frozen_list.cellWidget(row, 1).setCurrentIndex(1)
+            for row in range(self.proxy_list.rowCount()):
+                if int(self.proxy_list.cellWidget(row, 1).currentIndex()) >= 2:
+                    self.proxy_list.cellWidget(row, 1).setCurrentIndex(1)
 
     def method_update(self, methodBox, row):
         table = self.sender().parent().parent()
@@ -1013,6 +1019,9 @@ class AppWindow(QtWidgets.QMainWindow):
                 table.cellWidget(row, 2).setEnabled(True)
             else:
                 table.cellWidget(row, 2).setEnabled(False)
+            # Reset the method to single method if the user also wants to average over the year
+            if self.check_mean.isChecked() == True and int(methodBox.currentIndex()) >= 2:
+                table.cellWidget(row, 1).setCurrentIndex(1)
 
     def seas_update(self, seasBox, row):
         table = self.sender().parent().parent()

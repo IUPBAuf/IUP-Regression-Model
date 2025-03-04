@@ -27,7 +27,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.6'
+ver = 'alpha 1.7'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -1514,19 +1514,19 @@ class AppWindow(QtWidgets.QMainWindow):
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         if self.con_alternative.isChecked() == True:
-            cf = self.con_canvas.axes.imshow(trend, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto')
+            cf = self.con_canvas.axes.imshow(trend, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto', alpha=0.7)
             if self.con_uncertainty.isChecked() == True:
                 for i in range(trend.shape[0]):
                     for j in range(trend.shape[1]):
                         if not masked_uncertainty[i, j]:
                             if i+1 == trend.shape[0] and j+1 == trend.shape[1]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i] - y_grid[i - 1]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i] - y_grid[i - 1]), linewidth=0, fill=None, hatch='//', edgecolor='grey'))
                             elif i+1 == trend.shape[0]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i] - y_grid[i-1]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i - 1] - y_grid[i]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i] - y_grid[i-1]), linewidth=0, fill=None, hatch='//', edgecolor='grey'))
                             elif j+1 == trend.shape[1]:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j - 1] - x_grid[j]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j] - x_grid[j - 1]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='//', edgecolor='grey'))
                             else:
-                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='///', edgecolor='grey'))
+                                self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[j] + (x_grid[j] - x_grid[j + 1]) / 2, y_grid[i] + (y_grid[i] - y_grid[i + 1]) / 2), (x_grid[j + 1] - x_grid[j]), (y_grid[i + 1] - y_grid[i]), linewidth=0, fill=None, hatch='//', edgecolor='grey'))
                             # self.con_canvas.axes.add_patch(patches.Rectangle((x_grid[0] + (x_grid[0]-x_grid[1])/2 + j * (x_grid[1] - x_grid[0]), y_grid[0] + (y_grid[0]-y_grid[1])/2 + i * (y_grid[1] - y_grid[0])), (x_grid[1] - x_grid[0]), (y_grid[1] - y_grid[0]), hatch="////", fill=False, edgecolor='black'))
         else:
             cf = self.con_canvas.axes.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
@@ -1613,8 +1613,8 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.resi_canvas.axes_list = [self.resi_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
-        # bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
-        bounds = np.arange(-9, 10, 1, dtype=int)
+        bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
+        # bounds = np.arange(-9, 10, 1, dtype=int)
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
@@ -1622,7 +1622,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         for k, ax in enumerate(self.resi_canvas.axes_list):
             ax.plot(self.time[valid_rows], Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
-            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals', linewidth=1.8)
+            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
             ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
             y_label_cor = 0.025
             self.resi_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
@@ -1860,7 +1860,6 @@ def get_proxy_time_overlap(ini, proxies, data):
             continue
         i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
         i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
-
     # for k, i in enumerate(new_proxies):
     #     if 'Nino' in i.name or 'ENSO' in i.name:
     #         # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
@@ -2776,21 +2775,23 @@ def iup_reg_model(data, proxies, ini):
     elif check == 2:
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
-
         X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
-                if kk * 12 > len(time):
-                    break
-                elif len(np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
+                time_index = np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)
+                arr = i.data[time_index][np.in1d(time[time_index].month, month_index)]
+                if arr.size == 0:
                     i.data[kk] = np.nan
                     continue
-                # Always calculates a yearly mean, not a seasonal mean of the proxies
-                i.data[kk] = np.nanmean(i.data[np.arange((kk * 12), min((kk * 12) + 12, len(time)), 1)])
+                elif np.count_nonzero((arr != 0) & ~np.isnan(arr)) / arr.size <= float(ini.get('skip_percentage', 0.75)):
+                    i.data[kk] = np.nan
+                    continue
+                i.data[kk] = np.nanmean(i.data[time_index][np.in1d(time[time_index].month, month_index)])
             i.data = i.data[:len(np.unique(time.year))]
         if getattr(data, 'inflection_index', None)[0]:
             for k, i in enumerate(data.inflection_index):
-                data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]      # Change inflection point to reflect the yearly data
+                data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]  # Change inflection point to reflect the yearly data
+
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     data_all = np.empty(X_all.shape[:-1])
@@ -2829,7 +2830,6 @@ def iup_reg_model(data, proxies, ini):
                     data_arr[k] = np.nan
                     continue
                 data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
-
             data_arr = data_arr[:len(np.unique(time.year))]
             if anom_check == 'True':
                 if ini.get('anomaly_method', 'rel') == 'abs':
@@ -2935,4 +2935,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

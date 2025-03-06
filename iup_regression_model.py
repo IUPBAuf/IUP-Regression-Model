@@ -8,7 +8,6 @@ import copy
 import netCDF4 as nc
 import datetime as dt
 import re
-import math
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -25,9 +24,9 @@ from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
-from regression_model_ui import Ui_MainWindow
+# from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.7'
+ver = 'alpha 1.8'
 
 # Default class for proxies to be saved as
 class Proxy:

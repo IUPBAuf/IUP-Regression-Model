@@ -586,11 +586,20 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxy_canvas = MplCanvas(self.proxy_fig_widget)
         self.proxy_layout.addWidget(self.proxy_canvas)
 
+        # Plotting Proxy Contour
+        self.dim_proxy_con_layout = self.dim_proxy_con_widget.layout()
+        self.dim_proxy_con_boxes = []
+        self.plot_button_proxy_con.clicked.connect(self.plot_proxy_con_figure)
+        self.proxy_con_layout = QVBoxLayout(self.proxy_con_fig_widget)
+        self.proxy_con_canvas = MplCanvas(self.proxy_con_fig_widget)
+        self.proxy_con_layout.addWidget(self.proxy_con_canvas)
+
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
         self.menu_load_data.triggered.connect(self.open_data_dialog)
         self.menu_load_proxy.triggered.connect(self.open_proxy_dialog)
         self.menu_save.triggered.connect(self.save_file)
+        self.menu_save_plot.triggered.connect(self.save_plot)
 
         self.frozen_list.horizontalHeader().sectionResized.connect(self.sync_frozen_to_main)
 
@@ -720,6 +729,23 @@ class AppWindow(QtWidgets.QMainWindow):
                 f.contact = '''Name: Brian Auffarth\rAffiliation: University of Bremen\rE-mail: brian@iup.physik.uni-bremen.de'''
                 f.date_of_creation = dt.datetime.today().strftime('%Y-%m-%d')
                 f.configuration_settings = "\n".join([f"{key} = {value}" for key, value in self.ini.items()])
+
+    def save_plot(self):
+        canvas = self.figure_tabs.widget(self.figure_tabs.currentIndex()).findChild(FigureCanvas)
+        if canvas:
+            if not canvas.figure.axes:
+                print('Canvas is empty. Please plto something before saving.')
+                return
+            # canvas.figure.savefig("plot.png", dpi=300)
+            save_path, _ = QFileDialog.getSaveFileName(self, "Save Figure", canvas.figure.axes[0].get_title().replace('\n', ' ') + '.png', "PNG Files (*.png);;All Files (*)")
+            if save_path:
+                original_size = canvas.figure.get_size_inches()
+                canvas.figure.set_size_inches(16, 9)
+                ax = canvas.figure.axes[0]
+                self.model_canvas.figure.tight_layout()
+                canvas.figure.savefig(save_path, dpi=300)
+                canvas.figure.set_size_inches(original_size)
+                self.model_canvas.figure.tight_layout()
 
     def add_data_dia(self):
         self.dia_data_combo.clear()
@@ -1248,6 +1274,19 @@ class AppWindow(QtWidgets.QMainWindow):
 
                 layout.addLayout(col_layout)
 
+    def populate_dim_widgets_proxy_con(self):
+        self.proxy_con_combo.clear()
+        combo = self.proxy_con_combo
+
+        proxies = []
+
+        str_groups = get_string_groups(self.proxy_string)
+        for key, i in str_groups.items():
+            if key[0] == 'proxy':
+                proxies.append(key[3])
+
+        combo.addItems(proxies)
+
     def populate_X_dim_widget(self):
         self.dim_X_boxes.clear()
 
@@ -1461,15 +1500,14 @@ class AppWindow(QtWidgets.QMainWindow):
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
             ax.plot(X_slope, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
-            y_label_cor = 0.025
-            self.model_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
-            x_label_cor = 0.02
-            self.model_canvas.figure.text(x_label_cor, 0.5, 'Number Density [molec/cm³]', ha='center', va='center', rotation='vertical', fontsize=12)
             ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
             ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_model_boxes]))))
+        self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
+        self.model_canvas.axes_list[0].set_ylabel('Number Density [molec/cm³]', fontsize=14)
+        self.model_canvas.figure.tight_layout()
         toolbar = NavigationToolbar(self.model_canvas, self)
 
         self.model_canvas.draw()
@@ -1622,19 +1660,16 @@ class AppWindow(QtWidgets.QMainWindow):
 
         for k, ax in enumerate(self.resi_canvas.axes_list):
             ax.plot(self.time[valid_rows], Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
-            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
+            ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
             ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
-            y_label_cor = 0.025
-            self.resi_canvas.figure.text(0.45, y_label_cor, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
-            x_label_cor = 0.02
-            self.resi_canvas.figure.text(x_label_cor, 0.5, 'Number Density [molec/cm³]', ha='center', va='center', rotation='vertical', fontsize=12)
-            ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
             ax.set_title(data.name + '\n residuals at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_resi_boxes]))))
         toolbar = NavigationToolbar(self.resi_canvas, self)
-
+        self.resi_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
+        self.resi_canvas.axes_list[0].set_ylabel('Number Density [molec/cm³]', fontsize=14)
+        self.resi_canvas.figure.tight_layout()
         self.resi_canvas.draw()
 
     def plot_proxy_figure(self):
@@ -1682,12 +1717,100 @@ class AppWindow(QtWidgets.QMainWindow):
             if k < len(self.proxy_canvas.axes_list) - 1:
                 ax.set_xticklabels([])
                 ax.tick_params(axis='x', which='both', length=0)
+            else:
+                ax.set_xlabel('Time [yr]', fontsize=14)
 
-        self.proxy_canvas.figure.subplots_adjust(hspace=0.5)
-        self.proxy_canvas.figure.text(0.45, 0.025, 'Time [yr]', ha='center', va='center', rotation='horizontal', fontsize=12)
+        self.proxy_canvas.figure.tight_layout()
 
         self.proxy_canvas.draw_idle()
         self.proxy_canvas.flush_events()
+
+    def plot_proxy_con_figure(self):
+        # Clear the figure
+        self.proxy_con_canvas.figure.clf()
+
+        beta = copy.deepcopy(self.betaa)
+        data = copy.deepcopy(self.current_data)
+
+        # Get dimension combo boxes indices
+        plot_indices = ()
+        for k, combo in enumerate(self.dim_proxy_con_boxes):
+            if combo.currentIndex() == 0:
+                plot_indices += (slice(None),)
+                x_grid = getattr(data, data.dim_array[1:][k])
+                x_label = data.dim_array[1:][k]
+            elif combo.currentIndex() == 1:
+                plot_indices += (slice(None),)
+                y_grid = getattr(data, data.dim_array[1:][k])
+                y_label = data.dim_array[1:][k]
+            else:
+                plot_indices += (combo.currentIndex() - 2,)
+
+        str_groups = get_string_groups(self.proxy_string)
+        count = 0
+        for key, i in str_groups.items():
+            if key[0] == 'proxy':
+                if self.proxy_con_combo.currentIndex() == count:
+                    proxy_indices = i
+                    break
+                count += 1
+
+        plot_indices += (proxy_indices,)
+        beta = np.nansum(beta[plot_indices], axis=-1)
+        if beta.shape != (len(y_grid), len(x_grid)):
+            beta = beta.T
+
+        self.proxy_con_canvas.axes = self.proxy_con_canvas.figure.add_subplot(1, 1, 1)
+
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
+        cmap.set_under(plt.get_cmap('RdBu_r')(0))
+        cmap.set_over(plt.get_cmap('RdBu_r')(255))
+        vmax = np.ceil(np.nanmax(np.abs(beta)) / 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))) * 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))
+        bounds = np.concatenate((np.arange(-vmax, 0, (vmax/7)), np.arange(0, vmax + (vmax/7), (vmax/7))))
+
+        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+
+        if self.proxy_con_alternative.isChecked() == True:
+            cf = self.proxy_con_canvas.axes.imshow(beta, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto', alpha=0.7)
+        else:
+            cf = self.proxy_con_canvas.axes.contourf(x_grid, y_grid, beta, norm=norm, levels=bounds, cmap=cmap, extend='both')
+            self.proxy_con_canvas.axes.contour(x_grid, y_grid, beta, norm=norm, levels=bounds, colors=('k',), alpha=0.7, extend='both', linewidths=1)
+        self.proxy_con_canvas.axes.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
+        self.proxy_con_canvas.axes.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
+        if self.proxy_con_invert.isChecked() == True:
+            self.proxy_con_canvas.axes.set_ylim(self.proxy_con_canvas.axes.get_ylim()[::-1])
+        self.proxy_con_canvas.axes.tick_params(axis='both')
+        self.proxy_con_canvas.axes.set_title(self.proxy_con_combo.currentText() + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_con_boxes]))))
+        self.proxy_con_canvas.axes.set_xlabel(x_label, fontsize=14)
+        self.proxy_con_canvas.axes.set_ylabel(y_label, fontsize=14)
+
+        divider = make_axes_locatable(self.proxy_con_canvas.axes)
+        cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
+        cbar = self.proxy_con_canvas.figure.colorbar(cf, cax=cbar_ax)
+        cbar.set_ticks(bounds)
+        self.proxy_con_canvas.figure.tight_layout()
+        toolbar = NavigationToolbar(self.proxy_con_canvas, self)
+
+        self.proxy_con_canvas.draw()
+
+    def populate_all(self):
+        self.clear_dim_widgets(self.dim_model_layout)
+        self.populate_dim_widgets_1d('model')
+        self.clear_dim_widgets(self.dim_X_layout)
+        self.populate_X_dim_widget()
+        self.clear_dim_widgets(self.dim_con_layout)
+        self.populate_dim_widgets_2d('con')
+        self.clear_dim_widgets(self.dim_resi_layout)
+        self.populate_dim_widgets_1d('resi')
+        self.clear_dim_widgets(self.dim_cell_layout)
+        self.populate_dim_widgets_2d('cell')
+        self.clear_dim_widgets(self.dim_proxy_layout_checks)
+        self.populate_dim_widgets_proxy()
+        self.clear_dim_widgets(self.dim_proxy_layout)
+        self.populate_dim_widgets_1d('proxy')
+        self.clear_dim_widgets(self.dim_proxy_con_layout)
+        self.populate_dim_widgets_2d('proxy_con')
+        self.populate_dim_widgets_proxy_con()
 
     def print_ini(self):
         print('brian@iup.physik.uni-bremen.de')
@@ -1708,20 +1831,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
         self.current_data = set_data_limits(self.current_data, self.current_ini)
 
-        self.clear_dim_widgets(self.dim_model_layout)
-        self.populate_dim_widgets_1d('model')
-        self.clear_dim_widgets(self.dim_X_layout)
-        self.populate_X_dim_widget()
-        self.clear_dim_widgets(self.dim_con_layout)
-        self.populate_dim_widgets_2d('con')
-        self.clear_dim_widgets(self.dim_resi_layout)
-        self.populate_dim_widgets_1d('resi')
-        self.clear_dim_widgets(self.dim_cell_layout)
-        self.populate_dim_widgets_2d('cell')
-        self.clear_dim_widgets(self.dim_proxy_layout_checks)
-        self.populate_dim_widgets_proxy()
-        self.clear_dim_widgets(self.dim_proxy_layout)
-        self.populate_dim_widgets_1d('proxy')
+        self.populate_all()
 
 
 def load_config_ini(ini_path):
@@ -2677,14 +2787,14 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
             trenda_z = [np.nan] * len(trend_string_index)
             siga_z = [np.nan] * len(trend_string_index)
         else:
+            trenda_z = []
+            siga_z = []
             if ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'rel':
-                trenda_z = np.nanmean(betaa[trend_string_index]) * 120 * 100
-                siga_z = np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])))
+                trenda_z.append(np.nanmean(betaa[trend_string_index]) * 120 * 100)
+                siga_z.append(np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index]))))
             elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'abs') == 'rel':
                 print('NOT YET FINISHED')
             else:
-                trenda_z = []
-                siga_z = []
                 for keys, indices in groups.items():
                     if keys[0] == 'intercept' or keys[0] == 'proxy':
                         continue
@@ -2701,7 +2811,6 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
         trenda_z = [np.nan] * len(trend_string_index)
         siga_z = [np.nan] * len(trend_string_index)
         print('Failed to calculate the trend and significants')
-
     if len(trenda_z) == 1:
         return trenda_z.pop(), siga_z.pop(), beta, betaa, np.diag(covbetaa)
     else:
@@ -2935,4 +3044,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

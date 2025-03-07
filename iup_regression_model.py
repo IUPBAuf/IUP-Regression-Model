@@ -114,7 +114,6 @@ class SavePlotWindow(QtWidgets.QDialog):
     def __init__(self, original_size, parent=None):
         super(SavePlotWindow, self).__init__()
         uic.loadUi('save_plot.ui', self)
-        print(original_size)
         self.width_line.setText(str(original_size[0]))
         self.height_line.setText(str(original_size[1]))
 
@@ -1535,7 +1534,7 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
             ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_model_boxes]))))
         self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
-        self.model_canvas.axes_list[0].set_ylabel('Number Density [molec/cm³]', fontsize=14)
+        self.model_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
         self.model_canvas.figure.tight_layout()
         toolbar = NavigationToolbar(self.model_canvas, self)
 
@@ -1556,11 +1555,11 @@ class AppWindow(QtWidgets.QMainWindow):
             if combo.currentIndex() == 0:
                 plot_indices += (slice(None),)
                 x_grid = getattr(data, data.dim_array[1:][k])
-                x_label = data.dim_array[1:][k]
+                x_label = getattr(data, data.dim_array[1:][k] + '_unit')
             elif combo.currentIndex() == 1:
                 plot_indices += (slice(None),)
                 y_grid = getattr(data, data.dim_array[1:][k])
-                y_label = data.dim_array[1:][k]
+                y_label = getattr(data, data.dim_array[1:][k] + '_unit')
             else:
                 plot_indices += (combo.currentIndex() - 2,)
         if trends[plot_indices].shape != (len(y_grid), len(x_grid)):
@@ -1571,15 +1570,13 @@ class AppWindow(QtWidgets.QMainWindow):
             signi = signis[plot_indices] > 2
         masked_uncertainty = np.where(np.isnan(trend), np.nan, signi)
 
-        self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
-
         bounds = np.arange(-10, 11, 1, dtype=int)
-        # bounds = [-7, -5, -4, -3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 7]
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
+        self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
         if self.con_alternative.isChecked() == True:
             cf = self.con_canvas.axes.imshow(trend, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto', alpha=0.7)
             if self.con_uncertainty.isChecked() == True:
@@ -1606,6 +1603,7 @@ class AppWindow(QtWidgets.QMainWindow):
         if self.con_invert.isChecked() == True:
             self.con_canvas.axes.set_ylim(self.con_canvas.axes.get_ylim()[::-1])
         self.con_canvas.axes.tick_params(axis='both')
+        self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_con_boxes]))))
         # self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         self.con_canvas.axes.set_xlabel(x_label, fontsize=14)
         self.con_canvas.axes.set_ylabel(y_label, fontsize=14)
@@ -1677,6 +1675,7 @@ class AppWindow(QtWidgets.QMainWindow):
             breakpoint_index = np.where(self.time[valid_rows] >= dt.datetime.strptime(self.current_ini.get('inflection_point'), '%Y-%m').date())[0][0]
             X = np.insert(X, breakpoint_index, X[breakpoint_index])
             Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+            Y_resi_2 = np.insert(Y_resi_2, breakpoint_index, np.nan)
 
         self.resi_canvas.axes_list = [self.resi_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
@@ -1688,8 +1687,8 @@ class AppWindow(QtWidgets.QMainWindow):
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.resi_canvas.axes_list):
-            ax.plot(self.time[valid_rows], Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
-            ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
+            ax.plot(X, Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
+            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
             ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
@@ -1697,7 +1696,8 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.set_title(data.name + '\n residuals at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_resi_boxes]))))
         toolbar = NavigationToolbar(self.resi_canvas, self)
         self.resi_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
-        self.resi_canvas.axes_list[0].set_ylabel('Number Density [molec/cm³]', fontsize=14)
+        self.resi_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
+        self.resi_canvas.axes_list[0].legend()
         self.resi_canvas.figure.tight_layout()
         self.resi_canvas.draw()
 
@@ -1708,6 +1708,7 @@ class AppWindow(QtWidgets.QMainWindow):
         # Get dimension combo boxes indices
         plot_indices = [combo.currentIndex() for combo in self.dim_proxy_boxes]
         indices = tuple([slice(None)] + list(plot_indices))
+        data = copy.deepcopy(self.current_data)
         X = copy.deepcopy(self.X[indices])
         beta = copy.deepcopy(self.betaa[tuple(plot_indices)])
         checks = [check.isChecked() for check in self.dim_proxy_checks]
@@ -1743,11 +1744,14 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.plot(date, Y[k][valid_rows], label=Y_label[k], color=colors[k], linewidth=1.8)
             ax.yaxis.set_label_position("right")
             ax.set_ylabel(Y_label[k])
+            if k == 0:
+                ax.set_title('Proxies at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_boxes]))))
             if k < len(self.proxy_canvas.axes_list) - 1:
                 ax.set_xticklabels([])
                 ax.tick_params(axis='x', which='both', length=0)
             else:
                 ax.set_xlabel('Time [yr]', fontsize=14)
+        self.proxy_canvas.figure.supylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
 
         self.proxy_canvas.figure.tight_layout()
 
@@ -1767,11 +1771,11 @@ class AppWindow(QtWidgets.QMainWindow):
             if combo.currentIndex() == 0:
                 plot_indices += (slice(None),)
                 x_grid = getattr(data, data.dim_array[1:][k])
-                x_label = data.dim_array[1:][k]
+                x_label = getattr(data, data.dim_array[1:][k] + '_unit')
             elif combo.currentIndex() == 1:
                 plot_indices += (slice(None),)
                 y_grid = getattr(data, data.dim_array[1:][k])
-                y_label = data.dim_array[1:][k]
+                y_label = getattr(data, data.dim_array[1:][k] + '_unit')
             else:
                 plot_indices += (combo.currentIndex() - 2,)
 
@@ -1815,7 +1819,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         divider = make_axes_locatable(self.proxy_con_canvas.axes)
         cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
-        cbar = self.proxy_con_canvas.figure.colorbar(cf, cax=cbar_ax)
+        cbar = self.proxy_con_canvas.figure.colorbar(cf, cax=cbar_ax, label=self.current_ini.get('o3_var_unit', ''))
         cbar.set_ticks(bounds)
         self.proxy_con_canvas.figure.tight_layout()
         toolbar = NavigationToolbar(self.proxy_con_canvas, self)
@@ -2801,7 +2805,7 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
     Xmask2ok = Xmask2[0:k, :]
 
     mult = 1
-    if ini.get('o3_var_unit', '').split('_')[0] == 'anom':
+    if ini.get('o3_var_anom', 'False') == 'True':
         mult *= 1
     else:
         mult *= 100 / np.nanmean(data_arr)

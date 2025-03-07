@@ -92,14 +92,7 @@
              </spacer>
             </item>
             <item>
-             <widget class="QComboBox" name="o3_unit_combo">
-              <property name="minimumSize">
-               <size>
-                <width>150</width>
-                <height>0</height>
-               </size>
-              </property>
-             </widget>
+             <widget class="QLineEdit" name="o3_unit"/>
             </item>
            </layout>
           </widget>

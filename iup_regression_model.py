@@ -110,6 +110,26 @@ class PreviewWindow(QtWidgets.QDialog):
                 self.preview_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
 
 
+class SavePlotWindow(QtWidgets.QDialog):
+    def __init__(self, original_size, parent=None):
+        super(SavePlotWindow, self).__init__()
+        uic.loadUi('save_plot.ui', self)
+        print(original_size)
+        self.width_line.setText(str(original_size[0]))
+        self.height_line.setText(str(original_size[1]))
+
+        self.btn_cancel.clicked.connect(self.close)
+        self.btn_save.clicked.connect(self.accept)
+
+    def get_options(self):
+        try:
+            size = (float(self.width_line.text()), float(self.height_line.text()))
+        except:
+            size = False
+        include_title = self.radio_with.isChecked()
+        return size, include_title
+
+
 # Popup window to set the variable names to load data
 class VariableWindow(QtWidgets.QDialog):
     ini_signal = pyqtSignal(dict)
@@ -129,6 +149,7 @@ class VariableWindow(QtWidgets.QDialog):
         # connect buttons
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
+
 
     def show_options(self):
         current_index = self.variable_widget.currentIndex()
@@ -735,15 +756,24 @@ class AppWindow(QtWidgets.QMainWindow):
             if not canvas.figure.axes:
                 print('Canvas is empty. Please plto something before saving.')
                 return
-            # canvas.figure.savefig("plot.png", dpi=300)
             save_path, _ = QFileDialog.getSaveFileName(self, "Save Figure", canvas.figure.axes[0].get_title().replace('\n', ' ') + '.png', "PNG Files (*.png);;All Files (*)")
             if save_path:
-                original_size = canvas.figure.get_size_inches()
-                canvas.figure.set_size_inches(16, 9)
-                ax = canvas.figure.axes[0]
+                original_size = tuple(canvas.figure.get_size_inches())
+                dialog = SavePlotWindow(original_size, self)
+                if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                    fig_size, include_title = dialog.get_options()
+                    if not fig_size:
+                        return
+                else:
+                    return  # User canceled the operation
+                canvas.figure.set_size_inches(fig_size)
+                original_title = canvas.figure.axes[0].get_title()
+                if not include_title:
+                    canvas.figure.axes[0].set_title('')
                 self.model_canvas.figure.tight_layout()
                 canvas.figure.savefig(save_path, dpi=300)
                 canvas.figure.set_size_inches(original_size)
+                canvas.figure.axes[0].set_title(original_title)
                 self.model_canvas.figure.tight_layout()
 
     def add_data_dia(self):

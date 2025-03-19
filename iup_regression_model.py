@@ -172,6 +172,11 @@ class VariableWindow(QtWidgets.QDialog):
 
         dims = self.data.variables[self.o3_var_combo.currentText()].dimensions
 
+        o3_ln = getattr(self.data.variables[self.o3_var_combo.currentText()], 'long_name', getattr(self.data.variables[self.o3_var_combo.currentText()], 'name', ''))
+        o3_units = getattr(self.data.variables[self.o3_var_combo.currentText()], 'units', '')
+        if o3_ln or o3_units:
+            self.o3_unit.setText(o3_ln + ' [' + o3_units + ']')
+
         self.combo_boxes = []
         self.line_edits = []
         for k, i in enumerate(dims):
@@ -197,6 +202,24 @@ class VariableWindow(QtWidgets.QDialog):
             combo.setCurrentIndex(dim_index)
             self.combo_boxes.append(combo)
             row_layout.addWidget(combo)
+            frame_layout.addWidget(row_widget)
+
+            # Add widget with unit input
+            row_widget = QtWidgets.QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            label = QtWidgets.QLabel(i + ' unit: ')
+            row_layout.addWidget(label)
+            spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+            row_layout.addItem(spacer)
+            unit_line = QtWidgets.QLineEdit()
+            try:
+                ln = getattr(self.data.variables[i], 'long_name', getattr(self.data.variables[i], 'name', ''))
+                units = getattr(self.data.variables[i], 'units', '')
+                if ln or units:
+                    unit_line.setText(ln + ' [' + units + ']')
+            except:
+                unit_line.setText('')
+            row_layout.addWidget(unit_line)
             frame_layout.addWidget(row_widget)
 
             # Add widget with tag input
@@ -226,6 +249,7 @@ class VariableWindow(QtWidgets.QDialog):
                         row_layout.addWidget(line_time)
                         frame_layout.addWidget(row_widget)
             line.textChanged.connect(self.tag_change)
+
             self.dim_layout.addWidget(frame)
 
     def load_variable_keys(self):
@@ -235,6 +259,13 @@ class VariableWindow(QtWidgets.QDialog):
 
     def update_OK(self):
         self.bttn_ok.setEnabled(not any(combo.currentIndex() == 0 for combo in self.combo_boxes))
+        var_name = self.sender().currentText()
+
+        if self.sender().parent():
+            ln = getattr(self.data.variables[var_name], 'long_name', getattr(self.data.variables[var_name], 'name', ''))
+            units = getattr(self.data.variables[var_name], 'units', '')
+            if ln or units:
+                self.sender().parent().parent().layout().itemAt(1).widget().layout().itemAt(2).widget().setText(ln + ' [' + units + ']')
 
     def tag_change(self):
         line_text = self.sender().text()
@@ -250,8 +281,8 @@ class VariableWindow(QtWidgets.QDialog):
             row_layout.addWidget(line)
             self.sender().parent().parent().layout().addWidget(row_widget)
         else:
-            if self.sender().parent().parent().layout().itemAt(2):
-                self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(2).widget())
+            if self.sender().parent().parent().layout().itemAt(3):
+                self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(3).widget())
 
     def save_settings(self):
         # Saves all settings and closes the settings window
@@ -259,12 +290,14 @@ class VariableWindow(QtWidgets.QDialog):
         # Change ini
         if self.o3_var_combo.currentIndex() != 0:
             self.ini['o3_var'] = self.o3_var_combo.currentText()
+            self.ini['o3_var_unit'] = self.o3_unit.text()
         else:
             self.ini['o3_var'] = None
 
         for i in range(self.dim_layout.count()):
             combo_text = self.dim_layout.itemAt(i).widget().layout().itemAt(0).widget().layout().itemAt(2).widget().currentText()
-            line_text = self.dim_layout.itemAt(i).widget().layout().itemAt(1).widget().layout().itemAt(2).widget().text()
+            unit_text = self.dim_layout.itemAt(i).widget().layout().itemAt(1).widget().layout().itemAt(2).widget().text()
+            line_text = self.dim_layout.itemAt(i).widget().layout().itemAt(2).widget().layout().itemAt(2).widget().text()
 
             if line_text == 'time':
                 self.ini['time_var'] = combo_text
@@ -273,6 +306,7 @@ class VariableWindow(QtWidgets.QDialog):
             else:
                 self.ini['additional_var_' + str(i + 1) + '_index'] = combo_text
                 self.ini['additional_var_' + str(i + 1) + '_tag'] = line_text
+                self.ini['additional_var_' + str(i + 1) + '_unit'] = unit_text
 
         self.ini_signal.emit(self.ini)
         self.accept()
@@ -1486,7 +1520,6 @@ class AppWindow(QtWidgets.QMainWindow):
         Y_signi = self.signi[tuple(plot_indices)]
 
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
-
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
@@ -1501,7 +1534,6 @@ class AppWindow(QtWidgets.QMainWindow):
                     slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
                     slope_X.append(self.X[indices][:, i[0]])
         trend_string = "\n".join([f"trend {k + 1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
-
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
         Y_slope = Y_slope[valid_rows]
         plot_number = 1
@@ -1597,7 +1629,8 @@ class AppWindow(QtWidgets.QMainWindow):
             self.con_canvas.axes.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
             if self.con_uncertainty.isChecked() == True:
                 self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='none', hatches=['\\\\'])
-                self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.65)
+                self.con_canvas.axes.contour(x_grid, y_grid, masked_uncertainty, levels=[0.5], colors='#DBDBDB', norm=norm)
+                # self.con_canvas.axes.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='#DBDBDB', norm=norm, alpha=0.65)
         self.con_canvas.axes.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
         self.con_canvas.axes.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
         if self.con_invert.isChecked() == True:
@@ -1996,13 +2029,13 @@ def get_proxy_time_overlap(ini, proxies, data):
             date_end = np.array(i.time)[np.max(np.where(np.isin(np.array(i.time), new_data.time))[0])]
 
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
-    new_data.date_end = np.where(new_data.time == date_end)[0][0]
+    new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
 
     for i in new_proxies:
         if i.method == 0:
             continue
-        i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
-        i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end])[0][0]]
+        i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
+        i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
     # for k, i in enumerate(new_proxies):
     #     if 'Nino' in i.name or 'ENSO' in i.name:
     #         # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
@@ -2708,7 +2741,8 @@ def normalize(X_2):
 
     for k in range(X_2.shape[1]):
         current_proxy = X_2[X_2[:, k] != 0, k]
-        X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy)))*2 - 1
+        # X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy)))*2 - 1
+        X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy))) - 0.5
 
     return X_2
 

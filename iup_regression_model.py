@@ -26,7 +26,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 # from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.8'
+ver = 'alpha 1.9'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -2741,8 +2741,7 @@ def normalize(X_2):
 
     for k in range(X_2.shape[1]):
         current_proxy = X_2[X_2[:, k] != 0, k]
-        # X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy)))*2 - 1
-        X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy))) - 0.5
+        X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy)))*2 - 1
 
     return X_2
 
@@ -3111,4 +3110,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

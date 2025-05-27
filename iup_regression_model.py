@@ -19,6 +19,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+from statsmodels.stats.stattools import durbin_watson
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
@@ -26,7 +28,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 # from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.9'
+ver = 'alpha 1.10'
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -528,7 +530,6 @@ class ProxyWindow(QtWidgets.QDialog):
         super().closeEvent(event)
 
 
-
 # The UI and its functions
 class AppWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -730,10 +731,20 @@ class AppWindow(QtWidgets.QMainWindow):
 
             with nc.Dataset(save_path + '.nc', 'w') as f:
                 var_list = []
-                for k, i in enumerate(dims[1:]):
-                    f.createDimension(i, data.o3.shape[k+1])
-                    var_list.append(f.createVariable(i, 'f8', (i,)))
-                    var_list[k][:] = getattr(data, i)
+                for k, dim_name in enumerate(dims[1:]):
+                    dim_values = getattr(data, dim_name)
+
+                    f.createDimension(dim_name, len(dim_values))
+
+                    if isinstance(dim_values[0], str):
+                        # Save string array as 1D variable using 'str' dtype
+                        var = f.createVariable(dim_name, str, (dim_name,))
+                        var[:] = np.array(dim_values, dtype='str')
+                    else:
+                        var = f.createVariable(dim_name, 'f8', (dim_name,))
+                        var[:] = dim_values
+
+                    var_list.append(var)
                     # var_list[k].units = 'degrees_north'
                     # lat_var.long_name = 'latitude'
 
@@ -1297,7 +1308,6 @@ class AppWindow(QtWidgets.QMainWindow):
         button = getattr(self, button_name, None)
 
         boxes.clear()
-
         for dim_index in range(1, len(self.current_data.o3.shape)):
             col_layout = QVBoxLayout()
             label = QtWidgets.QLabel(self.current_data.dim_array[dim_index])
@@ -1327,13 +1337,18 @@ class AppWindow(QtWidgets.QMainWindow):
         for key, i in str_groups.items():
             if key[0] == 'proxy':
                 col_layout = QVBoxLayout()
-
                 check = QtWidgets.QCheckBox()
                 check.setText(key[3])
                 col_layout.addWidget(check)
-
                 checks.append(check)
+                layout.addLayout(col_layout)
 
+            elif key[0] == 'intercept':
+                col_layout = QVBoxLayout()
+                check = QtWidgets.QCheckBox()
+                check.setText(key[0])
+                col_layout.addWidget(check)
+                checks.append(check)
                 layout.addLayout(col_layout)
 
     def populate_dim_widgets_proxy_con(self):
@@ -1519,7 +1534,7 @@ class AppWindow(QtWidgets.QMainWindow):
             Y_trend = [Y_trend]
         Y_signi = self.signi[tuple(plot_indices)]
 
-        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
@@ -1752,12 +1767,16 @@ class AppWindow(QtWidgets.QMainWindow):
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
         date = copy.deepcopy(self.time[valid_rows])
 
+        mean_ozone = np.nanmean(self.trend_data[indices])
+
         Y_og = self.trend_data[indices][valid_rows]
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
         Y_resi = Y_og - Y_model
 
         Y = []
         Y_label = []
+        Y_method = []
+        Y_beta = []
 
         str_groups = get_string_groups(self.proxy_string)
 
@@ -1765,25 +1784,57 @@ class AppWindow(QtWidgets.QMainWindow):
         for key, i in str_groups.items():
             if key[0] == 'proxy':
                 if checks[check_idx]:
-                    Y.append(np.array(X[:, i]) @ np.array(beta[i]))
+                    if key[1] == 'month-of-the-year':
+                        Y.append(np.nansum(np.array(X[:, i]) * np.array(beta[i]), axis=1))
+                        Y_beta.append([np.nanmean(beta[i], axis=-1)])
+                    else:
+                        Y.append(np.array(X[:, i]) @ np.array(beta[i]))
+                        Y_beta.append(beta[i])
                     Y_label.append(key[-1])
+                    Y_method.append(key[1])
+                check_idx += 1
+            elif key[0] == 'intercept':
+                if checks[check_idx]:
+                    if key[1] == 'month-of-the-year':
+                        Y.append(np.nansum(np.array(X[:, i]) * np.array(beta[i]), axis=1))
+                    else:
+                        Y.append(np.array(X[:, i]) @ np.array(beta[i]))
+                    Y_label.append(key[0])
+                    Y_method.append(key[1])
+                    Y_beta.append(None)
                 check_idx += 1
 
+        # print(X[:, 11:16].shape)
+        # print(beta[11:16])
+        # fig, ax = plt.subplots(figsize=(16, 9))
+        # ax.plot(date, (X[:, 11:16] @ beta[11:16])[valid_rows], 'green', label='solar')
+        # ax.plot(date, Y[0][valid_rows], 'red', label='og_solar')
+        # ax.legend(loc='upper left', fontsize=16)
+        # plt.tight_layout()
+        # plt.show()
         self.proxy_canvas.axes_list = [self.proxy_canvas.figure.add_subplot(len(Y), 1, i + 1) for i in range(len(Y))]
-        colors = cm.cmaps['hawaii'](np.linspace(0, 1, len(Y)))
+        colors = cm.cmaps['hawaii'](np.linspace(0, 0.6, len(Y)))
 
         for k, ax in enumerate(self.proxy_canvas.axes_list):
             ax.plot(date, Y[k][valid_rows] + Y_resi, label=Y_label[k] + ' + residual', color='black', linewidth=1.4)
             ax.plot(date, Y[k][valid_rows], label=Y_label[k], color=colors[k], linewidth=1.8)
             ax.yaxis.set_label_position("right")
-            ax.set_ylabel(Y_label[k])
+            ax.set_ylabel(Y_label[k] + '\n' + Y_method[k])
             if k == 0:
-                ax.set_title('Proxies at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_boxes]))))
+                ax.set_title('Proxies at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_boxes]))) + '\n mean ozone: ' + "{:.2e}".format(mean_ozone) + ' ' + self.current_ini.get('o3_var_unit', ''))
             if k < len(self.proxy_canvas.axes_list) - 1:
                 ax.set_xticklabels([])
-                ax.tick_params(axis='x', which='both', length=0)
             else:
                 ax.set_xlabel('Time [yr]', fontsize=14)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.tick_params(which='major', length=7)
+            ax.tick_params(which='minor', length=4)
+
+            if Y_beta[k] is not None:
+                beta_str = f"beta: {Y_beta[k][0]:.2e}"
+                props = dict(boxstyle='round', facecolor='white', alpha=1)
+                ax.text(0.05, 0.95, beta_str, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
         self.proxy_canvas.figure.supylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
 
         self.proxy_canvas.figure.tight_layout()
@@ -1816,15 +1867,25 @@ class AppWindow(QtWidgets.QMainWindow):
         count = 0
         for key, i in str_groups.items():
             if key[0] == 'proxy':
-                if self.proxy_con_combo.currentIndex() == count:
-                    proxy_indices = i
-                    break
+                if key[1] == 'month-of-the-year':
+                    if self.proxy_con_combo.currentIndex() == count:
+                        proxy_indices = i
+                        plot_indices += (proxy_indices,)
+                        beta = np.nanmean(beta[plot_indices], axis=-1)
+                        break
+                else:
+                    if self.proxy_con_combo.currentIndex() == count:
+                        proxy_indices = i[0]
+                        plot_indices += (proxy_indices,)
+                        beta = beta[plot_indices]
+                        break
                 count += 1
 
-        plot_indices += (proxy_indices,)
-        beta = np.nansum(beta[plot_indices], axis=-1)
         if beta.shape != (len(y_grid), len(x_grid)):
             beta = beta.T
+
+        if np.isnan(beta).all():
+            return
 
         self.proxy_con_canvas.axes = self.proxy_con_canvas.figure.add_subplot(1, 1, 1)
 
@@ -2031,11 +2092,36 @@ def get_proxy_time_overlap(ini, proxies, data):
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
 
+    # Normalizing before cutting to the correct time frame (starting from 1970 to today)
     for i in new_proxies:
         if i.method == 0:
             continue
+        # Get every value starting from 1979 until the end
+        temp_data = i.data[np.where(i.time == dt.datetime(1979, 1, 15).date())[0][0]:]
+        for ii in np.ndindex(i.data.shape[1:]):
+            if len(i.data.shape) >= 2:
+                norm_data = ((temp_data[(slice(None),) + ii] - np.nanmin(temp_data[(slice(None),) + ii])) / (np.nanmax(temp_data[(slice(None),) + ii]) - np.nanmin(temp_data[(slice(None),) + ii])))
+            else:
+                norm_data = ((temp_data[(slice(None),) + ii] - np.nanmin(temp_data[(slice(None),) + ii])) / (np.nanmax(temp_data[(slice(None),) + ii]) - np.nanmin(temp_data[(slice(None),) + ii]))) * 2 - 1
+            i.data[(slice(np.where(i.time == dt.datetime(1979, 1, 15).date())[0][0], None),) + ii] = norm_data
         i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
         i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
+    # Normalization after the cutting into the correct time frame
+    # for i in new_proxies:
+    #     if i.method == 0:
+    #         continue
+    #     i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
+    #     i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
+    #     # Normalize
+    #     for ii in np.ndindex(i.data.shape[1:]):
+    #         # i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (
+    #         #             np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii]))) * 2 - 1
+    #         # 2d proxies like AOD will be normalized from 0 to 1 instead of -1 to 1
+    #         if len(i.data.shape) >= 2:
+    #             i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii])))
+    #         else:
+    #             i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii]))) * 2 - 1
+
     # for k, i in enumerate(new_proxies):
     #     if 'Nino' in i.name or 'ENSO' in i.name:
     #         # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
@@ -2155,6 +2241,49 @@ def parse_time(value, month=None, format=None):
     # If none of the formats match, raise an error
     else:
         raise ValueError(f"Unrecognized date format: {value}")
+
+
+def filter_time_series(data_arr, monthly=True, min_window_years=2, min_valid_fraction=0.75, check_yearly_validity=True):
+
+    data_arr = np.ma.masked_invalid(data_arr)
+    months_per_year = 12 if monthly else 1
+    total_len = len(data_arr)
+
+    # Find first valid window
+    window_size = min_window_years * months_per_year
+    start_idx = None
+
+    for i in range(total_len - window_size):
+        window = data_arr[i:i + window_size]
+        if window.count() / window_size >= min_valid_fraction:
+            start_idx = i
+            break
+
+    if start_idx is None:
+        # No valid window found -> return fully masked array
+        return np.ma.masked_all_like(data_arr)
+
+    # Start with all data masked
+    filtered_arr = np.ma.masked_all_like(data_arr)
+
+    # Copy values from the valid window onward
+    filtered_arr[start_idx:] = data_arr[start_idx:]
+
+    # Step 2: Optionally apply yearly filter
+    if check_yearly_validity:
+        n_months = total_len - start_idx
+        n_years = n_months // months_per_year
+
+        for y in range(n_years):
+            year_start = start_idx + y * months_per_year
+            year_end = year_start + months_per_year
+            year_slice = data_arr[year_start:year_end]
+            if year_slice.count() / months_per_year >= min_valid_fraction:
+                filtered_arr[year_start:year_end] = data_arr[year_start:year_end]
+            else:
+                filtered_arr[year_start:year_end] = np.ma.masked
+
+    return filtered_arr
 
 
 def get_string_groups(string_list):
@@ -2738,16 +2867,19 @@ def get_X_2(proxies, nanmask, X_proxy_size, it, data):
 
 
 def normalize(X_2):
-
     for k in range(X_2.shape[1]):
-        current_proxy = X_2[X_2[:, k] != 0, k]
-        X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy)))*2 - 1
+        current_proxy = X_2[:, k]
+        X_2[:, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy))) * 2 - 1
+        # current_proxy = X_2[X_2[:, k] != 0, k]
+        # X_2[X_2[:, k] != 0, k] = ((current_proxy - np.nanmin(current_proxy)) / (np.nanmax(current_proxy) - np.nanmin(current_proxy))) * 2 - 1
+        # if k == range(X_2.shape[1])[1]:
+        #     print(current_proxy)
+        #     print(X_2[:, k])
 
     return X_2
 
 
-def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
-    nanmask = ~np.isnan(data_arr.filled(np.nan))
+def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
 
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
@@ -2760,10 +2892,13 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
         print('Calculation failed: NaNs')
         return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, np.nan
 
-    # Carlos autoregression program, not yet completely reworked
+    # Carlo's autoregression program, not yet completely reworked
 
     fity = np.matmul(X_clean, beta)
     N = data_arr[nanmask] - fity  # what I cosider the error matrix N
+    # dw_stat = durbin_watson(N)
+    # if dw_stat < 1.5:
+    #     print('Warning: Significant positive autocorrelation detected (DW < 1.5)')
 
     k, sumN = 1, 0
     for t in range(len(nanmask))[1:]:
@@ -2832,7 +2967,7 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
             timok.append(k)
             jump_num += 1
         else:
-            # print('gap in X1, ', k, i)
+            print(chr(sum(range(ord(min(str(not ())))))))
             continue
 
     Xmask2ok = Xmask2[0:k, :]
@@ -2883,8 +3018,6 @@ def calc_trend(X_clean, data_arr, ini, X_string, inflection_index):
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
 
 
-
-# Main program to run
 def iup_reg_model(data, proxies, ini):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
     data = set_data_limits(data, ini)
@@ -2977,8 +3110,8 @@ def iup_reg_model(data, proxies, ini):
     while not it.finished:
         print(str(it.multi_index) + ': calculating trend')
 
-        data_arr = data.o3[(slice(None),) + it.multi_index]
-        data_arr = data_arr[data.date_start:data.date_end]
+        data_arr = data.o3[(slice(None),) + it.multi_index][data.date_start:data.date_end]
+        data_arr = filter_time_series(data_arr, monthly=True, min_window_years=2, min_valid_fraction=0.5, check_yearly_validity=True)
 
         if check == 0 and anom_check == 'True':
             for k in range(12):
@@ -3027,6 +3160,14 @@ def iup_reg_model(data, proxies, ini):
         X = np.concatenate([X_1, X_2], axis=1)
         X[:, np.all(X[nanmask] == 0, axis=0)] = np.nan
 
+        for keys, indices in groups.items():
+            if keys[1] == 'month-of-the-year' and keys[0] == 'intercept':
+                for i in indices:
+                    if (np.sum((X[:, i] != 0) & ~np.isnan(X[:, i])) / (len(X[:, i])/12)) < float(ini.get('skip_percentage', 0.75)):  # Check to see if any month has less that the needed coverage
+                        nanmask[(X[:, i] != 0) & ~np.isnan(X[:, i])] = False
+                        X[(X[:, i] != 0) & ~np.isnan(X[:, i]), :] = np.nan
+                        X[:, i::12] = np.nan
+
         # Only use the X matrix without empty rows and columns
         X[:, np.all(X[nanmask] == 0, axis=0)] = np.nan  # This changes the rows with only 0 and NaNs to only NaN rows
         for k in range(len(X_string)):
@@ -3039,12 +3180,13 @@ def iup_reg_model(data, proxies, ini):
         X_clean[np.isnan(X_clean)] = 0
 
         # Normalize
-        X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
+        # X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
         # Calculation of the trends and uncertainties for each cell
-        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
+        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean
+
         beta_all[it.multi_index + (slice(None),)][~col_mask] = beta
         betaa_all[it.multi_index + (slice(None),)][~col_mask] = betaa
         data_all[(slice(None),) + it.multi_index] = data_arr.filled(np.nan)
@@ -3110,4 +3252,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

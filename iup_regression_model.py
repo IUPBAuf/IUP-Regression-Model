@@ -14,6 +14,7 @@ import matplotlib as mpl
 import matplotlib
 import matplotlib.patheffects as pe
 import matplotlib.patches as patches
+from matplotlib.colors import LinearSegmentedColormap
 from cmcrameri import cm
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -1064,10 +1065,16 @@ class AppWindow(QtWidgets.QMainWindow):
             self.ini.pop(self.sender().objectName(), None)
             return
         try:
-            date = pd.to_datetime(str(self.sender().text()), format='%Y-%m').date()
+            parts = [p.strip() for p in str(self.sender().text()).split(',')]
+            for p in parts:
+                dt.datetime.strptime(p, '%Y-%m')    # Raises an error and goes out of the try case, if not in the correct format
+
+            date_check = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
+            # date = pd.to_datetime(str(self.sender().text()), format='%Y-%m').date()
             checkbox.setChecked(True)
             checkbox.setPalette(self.palette_right)
-            self.ini[self.sender().objectName()] = dt.datetime.strftime(dt.datetime.strptime(str(self.sender().text()), '%Y-%m'), '%Y-%m')
+            self.ini[self.sender().objectName()] = str(self.sender().text())
+            # self.ini[self.sender().objectName()] = dt.datetime.strftime(dt.datetime.strptime(str(self.sender().text()), '%Y-%m'), '%Y-%m')
         except:
             checkbox.setChecked(False)
             checkbox.setPalette(self.palette_wrong)
@@ -1417,19 +1424,19 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Loop through each dimension and create a pair of combo boxes
         for dim in dimensions:
-            widget = QtWidgets.QWidget()  # Container widget
-            h_layout = QHBoxLayout(widget)  # Horizontal layout for combo box pairs
+            widget = QtWidgets.QWidget()
+            h_layout = QHBoxLayout(widget)
 
             dim_values = list(map(str, getattr(data, dim)))
-            # First combo box with label
+            # First combo box
             vbox1 = QVBoxLayout()
             label1 = QtWidgets.QLabel(f"{dim} Min:")
             combo1 = QtWidgets.QComboBox()
-            combo1.addItems(dim_values)  # Populate with data
+            combo1.addItems(dim_values)
             vbox1.addWidget(label1)
             vbox1.addWidget(combo1)
 
-            # Second combo box with label
+            # Second combo box
             vbox2 = QVBoxLayout()
             label2 = QtWidgets.QLabel(f"{dim} Max:")
             combo2 = QtWidgets.QComboBox()
@@ -1440,15 +1447,17 @@ class AppWindow(QtWidgets.QMainWindow):
 
             self.combo_pairs[dim] = (combo1, combo2)
 
-            # Connect signals to slot functions
             combo1.currentIndexChanged.connect(lambda index, d=dim: self.lim_update_min(d, index))
             combo2.currentIndexChanged.connect(lambda index, d=dim: self.lim_update_max(d, index))
 
-            # Add both vertical layouts to the horizontal layout
+            # Reset Limits
+            keys_to_delete = [k for k in self.ini if 'additional_var_' in k and '_limit' in k]
+            for k in keys_to_delete:
+                del self.ini[k]
+
             h_layout.addLayout(vbox1)
             h_layout.addLayout(vbox2)
 
-            # Add the widget container to the group box layout
             main_layout.addWidget(widget)
 
     def sync_combo_boxes(self, var_string):
@@ -1617,10 +1626,18 @@ class AppWindow(QtWidgets.QMainWindow):
             signi = signis[plot_indices] > 2
         masked_uncertainty = np.where(np.isnan(trend), np.nan, signi)
 
+        x_is_log = 'pressure' in x_label.lower()
+        y_is_log = 'pressure' in y_label.lower()
+
         bounds = np.arange(-10, 11, 1, dtype=int)
-        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
-        cmap.set_under(plt.get_cmap('RdBu_r')(0))
-        cmap.set_over(plt.get_cmap('RdBu_r')(255))
+        # cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
+        # cmap.set_under(plt.get_cmap('RdBu_r')(0))
+        # cmap.set_over(plt.get_cmap('RdBu_r')(255))
+        colors = ["#08306b", "#0b4d6e", "#136b88", "#198aa2", "#1fa8bb", "#26c6d5", "#52dce1", "#7ee8eb", "#a5f2f3", "#e0ffff", "#fff4d6", "#fdd49e", "#fbc27b", "#fdae6b", "#fc8d3c", "#f16913", "#e6550d", "#d94801", "#b94702", "#a63603"]
+        cmap = LinearSegmentedColormap.from_list('custom_diverging', colors, N=255)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         self.con_canvas.axes = self.con_canvas.figure.add_subplot(1, 1, 1)
@@ -1655,6 +1672,11 @@ class AppWindow(QtWidgets.QMainWindow):
         # self.con_canvas.axes.set_title(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_boxes]))))
         self.con_canvas.axes.set_xlabel(x_label, fontsize=14)
         self.con_canvas.axes.set_ylabel(y_label, fontsize=14)
+
+        if x_is_log:
+            self.con_canvas.axes.set_xscale('log')
+        if y_is_log:
+            self.con_canvas.axes.set_yscale('log')
 
         divider = make_axes_locatable(self.con_canvas.axes)
         cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
@@ -2059,77 +2081,75 @@ def get_enso_lag(enso, enso_lag, date_start, date_end):
 
 
 def get_proxy_time_overlap(ini, proxies, data):
-    # Create a copy of the data and proxies that will get overwritten
+    # Create a copy of the data and proxies to safely modify
     new_data = copy.deepcopy(data)
     new_proxies = copy.deepcopy(proxies)
 
+    # Ensure data times are consistently the 15th of each month
     new_data.time = np.array([date.replace(day=15) for date in data.time])
 
-    # Load dates when calculation should start or else use the first and last date of the data time series
+    # Determine overlap start date
     if 'start_date' in ini:
         date_start = dt.datetime.strptime(ini['start_date'], '%Y-%m').date().replace(day=15)
-        if date_start < new_data.time[0]:
-            date_start = new_data.time[0]
+        date_start = max(date_start, new_data.time[0])
     else:
         date_start = new_data.time[0]
 
     for i in new_proxies:
-        if date_start < np.array(i.time)[0]:
-            date_start = np.array(i.time)[0]
+        proxy_start = np.array(i.time)[0]
+        if date_start < proxy_start:
+            date_start = proxy_start
 
+    # Determine overlap end date
     if 'end_date' in ini:
         date_end = dt.datetime.strptime(ini['end_date'], '%Y-%m').date().replace(day=15)
-        if date_end > new_data.time[-1]:
-            date_end = new_data.time[-1]
-            # raise Exception('The input for the end date of the trend calculation is later than the last date of the time series.')
+        date_end = min(date_end, new_data.time[-1])
     else:
         date_end = new_data.time[-1]
 
     for i in new_proxies:
-        if date_end > np.array(i.time)[-1] and i.method != 0:
-            date_end = np.array(i.time)[np.max(np.where(np.isin(np.array(i.time), new_data.time))[0])]
+        proxy_time = np.array(i.time)
+        if i.method != 0:
+            common_dates = np.intersect1d(proxy_time, new_data.time)
+            if len(common_dates) > 0:
+                last_common = common_dates[-1]
+                date_end = min(date_end, last_common)
 
+    # Store index positions for slicing
     new_data.date_start = np.where(new_data.time == date_start)[0][0]
     new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
 
-    # Normalizing before cutting to the correct time frame (starting from 1970 to today)
     for i in new_proxies:
         if i.method == 0:
             continue
-        # Get every value starting from 1979 until the end
-        temp_data = i.data[np.where(i.time == dt.datetime(1979, 1, 15).date())[0][0]:]
-        for ii in np.ndindex(i.data.shape[1:]):
-            if len(i.data.shape) >= 2:
-                norm_data = ((temp_data[(slice(None),) + ii] - np.nanmin(temp_data[(slice(None),) + ii])) / (np.nanmax(temp_data[(slice(None),) + ii]) - np.nanmin(temp_data[(slice(None),) + ii])))
-            else:
-                norm_data = ((temp_data[(slice(None),) + ii] - np.nanmin(temp_data[(slice(None),) + ii])) / (np.nanmax(temp_data[(slice(None),) + ii]) - np.nanmin(temp_data[(slice(None),) + ii]))) * 2 - 1
-            i.data[(slice(np.where(i.time == dt.datetime(1979, 1, 15).date())[0][0], None),) + ii] = norm_data
-        i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
-        i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
-    # Normalization after the cutting into the correct time frame
-    # for i in new_proxies:
-    #     if i.method == 0:
-    #         continue
-    #     i.data = i.data[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
-    #     i.time = i.time[np.where(i.time == new_data.time[new_data.date_start])[0][0]:np.where(i.time == new_data.time[new_data.date_end - 1])[0][0] + 1]
-    #     # Normalize
-    #     for ii in np.ndindex(i.data.shape[1:]):
-    #         # i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (
-    #         #             np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii]))) * 2 - 1
-    #         # 2d proxies like AOD will be normalized from 0 to 1 instead of -1 to 1
-    #         if len(i.data.shape) >= 2:
-    #             i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii])))
-    #         else:
-    #             i.data[(slice(None),) + ii] = ((i.data[(slice(None),) + ii] - np.nanmin(i.data[(slice(None),) + ii])) / (np.nanmax(i.data[(slice(None),) + ii]) - np.nanmin(i.data[(slice(None),) + ii]))) * 2 - 1
 
-    # for k, i in enumerate(new_proxies):
-    #     if 'Nino' in i.name or 'ENSO' in i.name:
-    #         # Shift the data of ENSO to incorporate the lag of the enso impact for the ozone
-    #         enso_lag = -2
-    #         enso = get_enso_lag(i, enso_lag, date_start, date_end)
-    #         new_proxies[k].data = enso.data
-    #     else:
-    #         new_proxies[k].data = i.data[(i.time >= date_start.replace(day=15)) & (i.time <= date_end.replace(day=15))]
+        proxy_time = np.array(i.time)
+        proxy_start_idx = np.where(proxy_time == dt.date(1979, 1, 15))[0]
+        start_idx = proxy_start_idx[0] if proxy_start_idx.size > 0 else 0
+
+        temp_data = i.data[start_idx:]
+
+        # Normalize for each spatial index (or overall if 1D)
+        for ii in np.ndindex(i.data.shape[1:]):
+            subdata = temp_data[(slice(None),) + ii]
+            min_val = np.nanmin(subdata)
+            max_val = np.nanmax(subdata)
+            if max_val > min_val:
+                norm_data = (subdata - min_val) / (max_val - min_val)
+                if len(i.data.shape) == 1:
+                    norm_data = norm_data * 2 - 1
+                i.data[(slice(start_idx, start_idx + len(norm_data)),) + ii] = norm_data
+
+        # Slice to final overlap period
+        i_start_idx = np.where(proxy_time == date_start)[0]
+        i_end_idx = np.where(proxy_time == date_end)[0]
+
+        # Handle missing overlap boundaries
+        i_start = i_start_idx[0] if i_start_idx.size > 0 else 0
+        i_end = i_end_idx[0] + 1 if i_end_idx.size > 0 else len(proxy_time)
+
+        i.data = i.data[i_start:i_end]
+        i.time = proxy_time[i_start:i_end]
 
     return new_data, new_proxies
 
@@ -2263,13 +2283,10 @@ def filter_time_series(data_arr, monthly=True, min_window_years=2, min_valid_fra
         # No valid window found -> return fully masked array
         return np.ma.masked_all_like(data_arr)
 
-    # Start with all data masked
     filtered_arr = np.ma.masked_all_like(data_arr)
 
-    # Copy values from the valid window onward
     filtered_arr[start_idx:] = data_arr[start_idx:]
 
-    # Step 2: Optionally apply yearly filter
     if check_yearly_validity:
         n_months = total_len - start_idx
         n_years = n_months // months_per_year
@@ -2278,11 +2295,15 @@ def filter_time_series(data_arr, monthly=True, min_window_years=2, min_valid_fra
             year_start = start_idx + y * months_per_year
             year_end = year_start + months_per_year
             year_slice = data_arr[year_start:year_end]
-            if year_slice.count() / months_per_year >= min_valid_fraction:
+            actual_len = len(year_slice)
+
+            if actual_len == 0:
+                continue  # Skip if slice is empty
+
+            if year_slice.count() / actual_len >= min_valid_fraction:
                 filtered_arr[year_start:year_end] = data_arr[year_start:year_end]
             else:
                 filtered_arr[year_start:year_end] = np.ma.masked
-
     return filtered_arr
 
 
@@ -2647,16 +2668,20 @@ def is_between(val, low_lim, up_lim):
 
 def get_inflection_index(ini, data):
     # Get the index of the inflection point for the dataset and check if it is in the dataset timeframe
-    inflection_index = None
+    inflection_index = []
+    inflection_date = []
     if 'inflection_point' in ini and 'inflection_method' in ini:
-        inflection_date = dt.datetime.strptime(ini['inflection_point'], '%Y-%m').date()
+        inflection_array = re.findall(r'\d{4}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12][0-9]|3[01]))?', ini['inflection_point'])
+        for date in inflection_array:
+            inflection_date.append(dt.datetime.strptime(date, '%Y-%m').date())
     else:
-        return inflection_index
+        return None
 
-    for k, i in enumerate(data.time.astype(dt.datetime)):
-        if i.year == inflection_date.year and i.month == inflection_date.month:
-            inflection_index = k
-    inflection_index = inflection_index - data.date_start
+    for date in inflection_date:
+        for k, i in enumerate(data.time.astype(dt.datetime)):
+            if i.year == date.year and i.month == date.month:
+                inflection_index.append(k)
+        inflection_index[-1] = inflection_index[-1] - data.date_start
 
     return inflection_index
 
@@ -2719,56 +2744,77 @@ def default_boundary_settings(proxy_list):
 
 
 def get_X_1(nanmask, ini, X_1_string, data):
-    mask_time = np.where(nanmask == True)[0]  # Array which has every index of actual values of the original data
+    # mask_time = np.where(nanmask == True)[0]  # Array which has every index of actual values of the original data
 
     if 'inflection_method' not in ini:
         X_raw = [1, 0]
-    elif ini['inflection_method'] == 'pwl':
-        X_raw = [1, 0, 0]
-    elif ini['inflection_method'] == 'ind':
-        X_raw = [1, 0, 1, 0]
+    elif 'pwl' in ini['inflection_method']:
+        X_raw = [1] + [0] * len(ini['inflection_method'])
+    elif 'ind' in ini['inflection_method']:
+        X_raw = [1, 0] * len(ini['inflection_method'])
+        if 'gap' in ini['inflection_method']:
+            for i, m in enumerate(ini['inflection_method']):
+                if m == 'gap':
+                    X_raw[2 * i] = None  # overwrite the '1'
+                    X_raw[2 * i + 1] = None
     else:
         raise Exception('The inflection method in the config.ini file is not being recognized. Either use "pwl" for piece-wise linear trends or "ind" for independent trends. If none of these should be used, please delete the inflection method line or comment it out with "#".')
 
     X_1 = np.zeros((len(nanmask), len(X_1_string)), dtype=float)
-    # MULTIPLE INFLECTION POINTS ARE NOT YET SUPPORTED! THE PROGRAM WILL ALWAYS USE THE FIRST INFLECTION POINT
 
     col = 0
-    first_part = True
+    infl_count = 0
+    gap_col_counter = 0
+
     for k, i in enumerate(X_raw):
         # Get an array of values (either the intercept values 1 or the ongoing trend values)
         # Depends on the inflection, trend and intercept method
         val = np.zeros(len(nanmask), dtype=float)  # Empty array to be filled with values depending on methods
-        if i == 1:  # Rules for intercept column
+        if i == None:   # If the column is a gap column, skip
+            val = 0
+            method = 1
+            gap_col_counter += 1
+            if gap_col_counter == 2:
+                infl_count += 1
+                gap_col_counter = 0
+        elif i == 1:  # Rules for intercept column
             seas_comp = int(ini.get('intercept_seasonal_component', ini.get('default_seasonal_component', 2)))
             method = int(ini['intercept_method'])
             if 'inflection_method' not in ini:
                 val = 1
-            elif ini['inflection_method'] == 'pwl':
+            elif 'pwl' in ini['inflection_method']:
                 val = 1
-            elif ini['inflection_method'] == 'ind':
-                if first_part == True:  # UGLY, needs improvement
-                    val[:data.inflection_index[0]] = 1
+            elif 'ind' in ini['inflection_method']:    # Intercept Inflection needs to account for multiple inflection points and gaps
+                if infl_count == 0:
+                    val[:data.inflection_index[infl_count]] = 1
+                elif infl_count < len(data.inflection_index):
+                    val[data.inflection_index[infl_count-1]:data.inflection_index[infl_count]] = 1
                 else:
-                    val[data.inflection_index[0]:] = 1
+                    val[data.inflection_index[infl_count-1]:] = 1
 
         else:      # Rules for trend column
             seas_comp = int(ini.get('trend_seasonal_component', ini.get('default_seasonal_component', 2)))
             method = int(ini['trend_method'])
             if 'inflection_method' not in ini:
                 val = np.arange(1, len(nanmask)+1)
-            elif ini['inflection_method'] == 'pwl':
-                if first_part == True:
+            elif 'pwl' in ini['inflection_method']:
+                if infl_count == 0:
                     val = np.arange(1, len(nanmask)+1)
-                    first_part = False
+                    infl_count += 1
+                elif infl_count < len(data.inflection_index):
+                    val[data.inflection_index[infl_count]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count]+1)
+                    infl_count += 1
                 else:
-                    val[data.inflection_index[0]:] = np.arange(1, len(nanmask)-data.inflection_index[0]+1)
-            elif ini['inflection_method'] == 'ind':
-                if first_part == True:  # UGLY, needs fixing
-                    val[:data.inflection_index[0]] = np.arange(1, data.inflection_index[0]+1)
-                    first_part = False
+                    val[data.inflection_index[infl_count-1]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count-1]+1)
+            elif 'ind' in ini['inflection_method']:
+                if infl_count == 0:
+                    val[:data.inflection_index[infl_count]] = np.arange(1, data.inflection_index[infl_count]+1)
+                    infl_count += 1
+                elif infl_count < len(data.inflection_index):
+                    val[data.inflection_index[infl_count-1]:data.inflection_index[infl_count]] = np.arange(1, data.inflection_index[infl_count] - data.inflection_index[infl_count-1] + 1)
+                    infl_count += 1
                 else:
-                    val[data.inflection_index[0]:] = np.arange(1, len(nanmask)-data.inflection_index[0]+1)
+                    val[data.inflection_index[infl_count-1]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count-1]+1)
 
         if method == 0:
             continue
@@ -2783,7 +2829,6 @@ def get_X_1(nanmask, ini, X_1_string, data):
                 col += 1
                 X_1[:, col] = val * np.cos(((kk + 1) * 2 * np.pi * np.arange(1, len(nanmask)+1))/12)
                 col += 1
-
         elif method == 3:
             month_array = np.array(pd.to_datetime(data.time[data.date_start:data.date_end]).month)
             for kk in range(12):
@@ -2892,13 +2937,10 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         print('Calculation failed: NaNs')
         return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, np.nan
 
-    # Carlo's autoregression program, not yet completely reworked
+    # Carlo's autoregression
 
     fity = np.matmul(X_clean, beta)
     N = data_arr[nanmask] - fity  # what I cosider the error matrix N
-    # dw_stat = durbin_watson(N)
-    # if dw_stat < 1.5:
-    #     print('Warning: Significant positive autocorrelation detected (DW < 1.5)')
 
     k, sumN = 1, 0
     for t in range(len(nanmask))[1:]:
@@ -2940,7 +2982,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     count = 0
     timok = list()
     comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X_clean])        # A combined column of all trend columns, for better comparison of consecutive values
-    if inflection_index[0]:
+    if inflection_index:
         continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len([inflection_index]))]        # A list of indices at which the continuity will jump back to 1
     else:
         continuity_jumps = []
@@ -2967,7 +3009,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
             timok.append(k)
             jump_num += 1
         else:
-            print(chr(sum(range(ord(min(str(not ())))))))
             continue
 
     Xmask2ok = Xmask2[0:k, :]
@@ -2995,13 +3036,15 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                 siga_z.append(np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index]))))
             elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'abs') == 'rel':
                 print('NOT YET FINISHED')
+                print(chr(sum(range(ord(min(str(not ())))))))
             else:
                 for keys, indices in groups.items():
                     if keys[0] == 'intercept' or keys[0] == 'proxy':
                         continue
                     if keys[1] == 'month-of-the-year':
                         trenda_z.append(np.nanmean(betaa[indices]) * mult)
-                        siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                        # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                        siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
                     else:
                         trenda_z.append(betaa[indices[0]] * mult)
                         siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
@@ -3018,35 +3061,171 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
 
 
+def calc_trend_v3(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
+    trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
+    groups = get_string_groups(X_string)
+
+    try:
+        beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
+    except:
+        print('Calculation failed: NaNs')
+        return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, np.nan
+
+    fity = np.matmul(X_clean, beta)
+    N = data_arr[nanmask] - fity
+
+    k, sumN = 1, 0
+    for t in range(1, len(nanmask)):
+        if not nanmask[t - 1] or not nanmask[t]:
+            continue
+        sumN += N[k] * N[k - 1]
+        k += 1
+    phi = (1.0 / np.var(N)) * (sumN / (len(data_arr[nanmask]) - 1))
+
+    P = np.zeros((len(data_arr[nanmask]), len(data_arr[nanmask])))
+    epsilon = np.zeros(len(data_arr[nanmask]))
+    for i in range(1, len(X_clean)):
+        for g in range(len(X_clean)):
+            if i == g:
+                if X_clean[i, 1] - X_clean[i - 1, 1] > 1:
+                    P[i, g] = np.sqrt(1 - phi**2)
+                    epsilon[i] = N[i] * np.sqrt(1 - phi**2)
+                else:
+                    P[i, g] = 1
+                    epsilon[i] = N[i] - phi * N[i - 1]
+            elif i == g + 1:
+                if X_clean[i, 1] - X_clean[i - 1, 1] <= 1:
+                    P[i, g] = -phi
+    P[0, 0] = np.sqrt(1 - phi**2)
+    epsilon[0] = N[0] * np.sqrt(1 - phi**2)
+
+    Xstar = P @ X_clean
+    Ystar = P @ data_arr[nanmask]
+    try:
+        betaa = np.linalg.inv(Xstar.T @ Xstar) @ Xstar.T @ Ystar
+        covbetaa = np.var(epsilon) * np.linalg.inv(Xstar.T @ Xstar)
+    except:
+        print('Proxy collinearity: regression not possible.')
+        return np.nan, np.nan, np.nan, np.nan, np.nan
+
+    Xmask2 = np.zeros((len(X_clean), X_clean.shape[1]))
+    Ymask2 = np.zeros(len(X_clean))
+    count = 0
+    timok = []
+
+    comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X_clean])
+    continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len(inflection_index))] if inflection_index[0] else []
+    jump_num = 0
+
+    for k, i in enumerate(comb_trend_col):
+        if k == 0 or i - comb_trend_col[k - 1] == 1:
+            Xmask2[count, :] = Xstar[k, :]
+            Ymask2[count] = Ystar[k]
+            count += 1
+            timok.append(k)
+        elif jump_num < len(continuity_jumps) and comb_trend_col[k - 1] == continuity_jumps[jump_num] and i == 1:
+            Xmask2[count, :] = Xstar[k, :]
+            Ymask2[count] = Ystar[k]
+            count += 1
+            timok.append(k)
+            jump_num += 1
+
+    Xmask2ok = Xmask2[:count, :]
+
+    # Constants for DU conversion
+    # DU_conversion = 1 / 2.687e16         # molec/cm² to DU
+    # dz_cm = 1e5                          # 1 km = 100,000 cm
+    months_per_decade = 120
+    conversion_factor = months_per_decade
+
+    if ini.get('o3_var_anom', 'False') == 'True':
+        mult = 1
+    else:
+        mult = 100 / np.nanmean(data_arr)
+
+    mult *= 10 if ini.get('averaging_window', None) else 120
+
+    # Calculate trend and uncertainty
+    try:
+        if len(beta) == 1 or len(Xmask2ok) < 10:
+            trenda_z = [np.nan] * len(trend_string_index)
+            siga_z = [np.nan] * len(trend_string_index)
+        else:
+            trenda_z = []
+            siga_z = []
+            for keys, indices in groups.items():
+                if keys[0] == 'intercept' or keys[0] == 'proxy':
+                    continue
+                if keys[1] == 'month-of-the-year':
+                    trend_vals = betaa[indices]
+                    trend_mean = np.nanmean(trend_vals) * mult
+                    trend_unc = np.sqrt(np.mean([covbetaa[i, i] for i in indices])) * mult
+                else:
+                    trend_val = betaa[indices[0]] * mult
+                    trend_unc = np.sqrt(covbetaa[indices[0], indices[0]]) * mult
+
+                trenda_z.append(trend_mean if keys[1] == 'month-of-the-year' else trend_val)
+                siga_z.append(trend_mean / trend_unc if keys[1] == 'month-of-the-year' else trend_val / trend_unc)
+    except:
+        trenda_z = [np.nan] * len(trend_string_index)
+        siga_z = [np.nan] * len(trend_string_index)
+        print('Failed to calculate the trend and significance.')
+
+    if len(trenda_z) == 1:
+        return trenda_z[0], siga_z[0], beta, betaa, np.diag(covbetaa)
+    else:
+        return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
+
+
 def iup_reg_model(data, proxies, ini):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
     data = set_data_limits(data, ini)
 
     # Get index of the inflection point
     data.inflection_index = get_inflection_index(ini, data)
-    if not isinstance(data.inflection_index, list):
-        data.inflection_index = [data.inflection_index]
+    print(data.inflection_index)
 
     # Creating the empty arrays for the trends and the uncertainty
     if 'inflection_method' not in ini:
         trenda_z = np.empty(np.atleast_1d(data.o3[0, ...]).shape) * np.nan
         siga_z = np.empty(np.atleast_1d(data.o3[0, ...]).shape) * np.nan
         X_string = ['intercept', 'trend']
-    elif ini['inflection_method'] == 'pwl':
-        trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        X_string = ['intercept', 'piece-wise linear trend #1', 'piece-wise linear trend #2']
-    elif ini['inflection_method'] == 'ind':
-        trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
-        X_string = ['intercept #1', 'independent trend #1', 'intercept #2', 'independent trend #2']
+    else:
+        infl_methods = [part.strip() for part in ini['inflection_method'].split(',') if part.strip()]
+        if len(infl_methods) < len(data.inflection_index) + 1:
+            ini['inflection_method'] = infl_methods * (len(data.inflection_index) + 1)
+        else:
+            ini['inflection_method'] = infl_methods
+        X_string = []
+
+        if ('pwl' in infl_methods and 'ind' in infl_methods) or ('pwl' in infl_methods and 'gap' in infl_methods):
+            raise ValueError('Piece-wise linear trends cannot be combined with gap and independent trends.')
+        elif 'ind' in infl_methods:
+            trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
+            siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
+            X_string = []
+            count = 1
+            for method in ini['inflection_method']:
+                if method == 'gap':
+                    X_string.append('gap')
+                    X_string.append('gap')
+                else:
+                    X_string.append(f'intercept #{count}')
+                    X_string.append(f'independent trend #{count}')
+                    count += 1
+        elif 'pwl' in ini['inflection_method']:
+            trenda_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
+            siga_z = np.empty(np.atleast_1d((data.o3[0, ...] + (2,))).shape) * np.nan
+            X_string = ['intercept', 'piece-wise linear trend #1']
+            for k in range(2, len(ini['inflection_method']) + 1):
+                X_string.append(f'piece-wise linear trend #{k}')
 
     # Expand dimension of trends and uncertainties, depending on number of inflection points
-    if data.inflection_index[0]:
+    if data.inflection_index:
         trenda_z = np.expand_dims(trenda_z, axis=-1)
-        trenda_z = np.tile(trenda_z, (1,) * (trenda_z.ndim - 1) + (len(data.inflection_index) + 1,))
+        trenda_z = np.tile(trenda_z, (1,) * (trenda_z.ndim - 1) + ((len(ini['inflection_method']) - ini['inflection_method'].count('gap')),))
         siga_z = np.expand_dims(siga_z, axis=-1)
-        siga_z = np.tile(siga_z, (1,) * (siga_z.ndim - 1) + (len(data.inflection_index) + 1,))
+        siga_z = np.tile(siga_z, (1,) * (siga_z.ndim - 1) + ((len(ini['inflection_method']) - ini['inflection_method'].count('gap')),))
 
     ini['trend_method'] = ini.get('trend_method', 1)
     ini['intercept_method'] = ini.get('intercept_method', 1)
@@ -3109,10 +3288,8 @@ def iup_reg_model(data, proxies, ini):
 
     while not it.finished:
         print(str(it.multi_index) + ': calculating trend')
-
         data_arr = data.o3[(slice(None),) + it.multi_index][data.date_start:data.date_end]
-        data_arr = filter_time_series(data_arr, monthly=True, min_window_years=2, min_valid_fraction=0.5, check_yearly_validity=True)
-
+        data_arr = filter_time_series(data_arr, monthly=True, min_window_years=5, min_valid_fraction=0.5, check_yearly_validity=True)
         if check == 0 and anom_check == 'True':
             for k in range(12):
                 if ini.get('anomaly_method', 'rel') == 'abs':
@@ -3179,10 +3356,11 @@ def iup_reg_model(data, proxies, ini):
         X_clean = X[~row_mask][:, ~col_mask]
         X_clean[np.isnan(X_clean)] = 0
 
-        # Normalize
-        # X_clean[:, len(X_1_string):] = normalize(X_clean[:, len(X_1_string):])
         # Calculation of the trends and uncertainties for each cell
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
+        # print('V1 - ', trenda_z[it.multi_index])
+        # trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend_v3(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
+        # print('V3 - ', trenda_z[it.multi_index])
 
         # Save X, beta and betaa
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean

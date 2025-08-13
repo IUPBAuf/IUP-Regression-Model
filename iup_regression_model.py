@@ -1564,9 +1564,11 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Include a breakpoint if there are inflection points
         if self.current_ini.get('inflection_point', None):
-            breakpoint_index = np.where(self.time[valid_rows] >= dt.datetime.strptime(self.current_ini.get('inflection_point'), '%Y-%m').date())[0][0]
-            X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
-            Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+            inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
+            for inflection_point in sorted(inflection_points):
+                breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
+                X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
+                Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
 
         self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
@@ -2802,7 +2804,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
                     val = np.arange(1, len(nanmask)+1)
                     infl_count += 1
                 elif infl_count < len(data.inflection_index):
-                    val[data.inflection_index[infl_count]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count]+1)
+                    val[data.inflection_index[infl_count-1]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count-1]+1)
                     infl_count += 1
                 else:
                     val[data.inflection_index[infl_count-1]:] = np.arange(1, len(nanmask)-data.inflection_index[infl_count-1]+1)
@@ -3183,7 +3185,6 @@ def iup_reg_model(data, proxies, ini):
 
     # Get index of the inflection point
     data.inflection_index = get_inflection_index(ini, data)
-    print(data.inflection_index)
 
     # Creating the empty arrays for the trends and the uncertainty
     if 'inflection_method' not in ini:

@@ -578,7 +578,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.start_date.textChanged.connect(self.format_check)
         self.end_date.textChanged.connect(self.format_check)
         self.inflection_point.textChanged.connect(self.format_check)
-        self.inflection_method.currentIndexChanged.connect(self.inflection_method_change)
         self.all_proxy_method.currentIndexChanged.connect(self.all_proxy_method_change)
         self.mean_line.textChanged.connect(self.text_check)
         self.anomaly_check.toggled.connect(self.anomaly_enable)
@@ -586,6 +585,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.radio_abs.toggled.connect(self.anomaly_method_toggle)
         self.preset_combo.currentIndexChanged.connect(self.change_preset)
         self.data_list.currentItemChanged.connect(self.data_change)
+        self.inflection_boxes = []
+        self.update_inflection_boxes(1)
 
         # Diagnostic UI functions
         self.dia_proxy_combo.currentIndexChanged.connect(self.proxy_diagnostic)
@@ -665,16 +666,14 @@ class AppWindow(QtWidgets.QMainWindow):
     def load_ini_settings(self):
 
         if 'inflection_point' in self.ini:
-            self.inflection_point.setText(dt.datetime.strftime(dt.datetime.strptime(self.ini['inflection_point'], '%Y-%m').date(), '%Y-%m'))
+            parts = [p.strip() for p in str(self.ini['inflection_point']).split(',')]
+            for p in parts:
+                dt.datetime.strptime(p, '%Y-%m')
+            date = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
+
+            self.inflection_point.setText(date)
         else:
             self.inflection_point.setText('YYYY-MM')
-
-        if 'inflection_point' in self.ini and 'inflection_method' in self.ini:
-            if self.ini['inflection_method'] == 'ind':
-                self.inflection_method.setCurrentIndex(0)
-            elif self.ini['inflection_method'] == 'pwl':
-                self.inflection_method.setCurrentIndex(1)
-            self.infl_check.setChecked(True)
 
         if 'start_date' in self.ini:
             self.start_date.setText(dt.datetime.strftime(dt.datetime.strptime(self.ini['start_date'], '%Y-%m').date(), '%Y-%m'))
@@ -725,9 +724,6 @@ class AppWindow(QtWidgets.QMainWindow):
         data = self.current_data
         # If a path was selected, save the file
         if save_path:
-            lat = data.lat
-            alt = data.lev
-            lon = data.lon
             dims = data.dim_array
 
             with nc.Dataset(save_path + '.nc', 'w') as f:
@@ -746,14 +742,12 @@ class AppWindow(QtWidgets.QMainWindow):
                         var[:] = dim_values
 
                     var_list.append(var)
-                    # var_list[k].units = 'degrees_north'
-                    # lat_var.long_name = 'latitude'
 
                 max_length = max(len(s) for s in self.proxy_string)
                 f.createDimension('n_coefficients', len(self.proxy_string))
                 f.createDimension('string_length', max_length)
                 f.createDimension('time', len(self.time))
-                f.createDimension('infl', 2)
+                f.createDimension('infl', len(self.current_ini['inflection_method']))
 
                 ind_var = f.createVariable('independent_variable_names', 'str', ('n_coefficients',))
                 ind_var[:] = np.array(self.proxy_string)
@@ -767,9 +761,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 X_var[:] = self.X
                 beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 beta_var[:] = self.betaa
-                # covb_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
-                # print(self.convbeta)
-                # covb_var[:] = self.convbeta
 
                 if len(self.trends.shape) == len(dim_tuple):
                     trend_var = f.createVariable('trend', 'f4', dim_tuple[1:] + ('infl',))
@@ -777,6 +768,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 else:
                     trend_var = f.createVariable('trend', 'f4', dim_tuple[1:])
                     sig_var = f.createVariable('trend_uncertainty', 'f4', dim_tuple[1:])
+
                 trend_var[:] = self.trends
                 sig_var[:] = self.signi
 
@@ -1029,16 +1021,34 @@ class AppWindow(QtWidgets.QMainWindow):
         self.palette_right.setColor(QPalette.Background, QColor(255, 255, 255, 0))
 
     def inflection_enable(self):
+        infl_list = ['ind', 'pwl', 'gap']
         # Enables/Disables the date entry
         if self.infl_check.isChecked() == True:
             self.inflection_point.setEnabled(True)
-            self.inflection_method.setEnabled(True)
-            self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
+            # self.inflection_method.setEnabled(True)
+            layout = self.inflection_widget.layout()
+            if layout is None:
+                return
+            infl_string = []
+            for i in range(layout.count()):
+                widget = layout.itemAt(i).widget()
+                if isinstance(widget, QtWidgets.QComboBox):
+                    widget.setEnabled(True)
+                infl_string.append(infl_list[widget.currentIndex()])
+            self.ini['inflection_method'] = ', '.join(infl_string)
+            # self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
             self.ini['inflection_point'] = self.inflection_point.text()
         else:
             self.inflection_point.setEnabled(False)
             self.ini.pop('inflection_point', None)
-            self.inflection_method.setEnabled(False)
+            # self.inflection_method.setEnabled(False)
+            layout = self.inflection_widget.layout()
+            if layout is None:
+                return
+            for i in range(layout.count()):
+                widget = layout.itemAt(i).widget()
+                if isinstance(widget, QtWidgets.QComboBox):
+                    widget.setEnabled(False)
             self.ini.pop('inflection_method', None)
 
     def anomaly_enable(self):
@@ -1055,6 +1065,25 @@ class AppWindow(QtWidgets.QMainWindow):
         elif self.radio_abs.isChecked():
             self.ini['anomaly_method'] = 'abs'
 
+    def update_inflection_boxes(self, count):
+        layout = self.inflection_widget.layout()
+        # Remove extra boxes
+        while len(self.inflection_boxes) > count:
+            box = self.inflection_boxes.pop()
+            layout.removeWidget(box)
+            box.deleteLater()
+
+        # Add missing boxes
+        while len(self.inflection_boxes) < count:
+            index = len(self.inflection_boxes) + 1
+            box = QtWidgets.QComboBox()
+            box.setObjectName(f'inflection_method_{index}')
+            box.addItems(['Independent Trend', 'Piece-wise Linear trend', 'Gap'])
+            box.currentIndexChanged.connect(self.inflection_method_change)
+
+            layout.addWidget(box)
+            self.inflection_boxes.append(box)
+
     def format_check(self):
         # Changes the checkmarks if the format of the date is being recongnized
         checkbox = getattr(self, 'check_' + str(self.sender().objectName()).split('_')[0], None)
@@ -1065,12 +1094,15 @@ class AppWindow(QtWidgets.QMainWindow):
             self.ini.pop(self.sender().objectName(), None)
             return
         try:
-            parts = [p.strip() for p in str(self.sender().text()).split(',')]
-            for p in parts:
-                dt.datetime.strptime(p, '%Y-%m')    # Raises an error and goes out of the try case, if not in the correct format
+            if self.sender().objectName() == 'inflection_point':
+                parts = [p.strip() for p in str(self.sender().text()).split(',')]
+                for p in parts:
+                    dt.datetime.strptime(p, '%Y-%m')    # Raises an error and goes out of the try case, if not in the correct format
+                date_check = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
+                self.update_inflection_boxes(len(parts) + 1)
+            else:
+                date = pd.to_datetime(str(self.sender().text()), format='%Y-%m').date()
 
-            date_check = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
-            # date = pd.to_datetime(str(self.sender().text()), format='%Y-%m').date()
             checkbox.setChecked(True)
             checkbox.setPalette(self.palette_right)
             self.ini[self.sender().objectName()] = str(self.sender().text())
@@ -1259,7 +1291,19 @@ class AppWindow(QtWidgets.QMainWindow):
             combo_box.setCurrentIndex(index)
 
     def inflection_method_change(self):
-        self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
+        # self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
+        infl_list = ['ind', 'pwl', 'gap']
+
+        layout = self.inflection_widget.layout()
+        if layout is None:
+            return
+        infl_string = []
+        for i in range(layout.count()):
+            widget = layout.itemAt(i).widget()
+            if isinstance(widget, QtWidgets.QComboBox):
+                widget.setEnabled(True)
+            infl_string.append(infl_list[widget.currentIndex()])
+        self.ini['inflection_method'] = ', '.join(infl_string)
 
     def data_change(self):
         # self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
@@ -2757,7 +2801,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
         if 'gap' in ini['inflection_method']:
             for i, m in enumerate(ini['inflection_method']):
                 if m == 'gap':
-                    X_raw[2 * i] = None  # overwrite the '1'
+                    X_raw[2 * i] = 1
                     X_raw[2 * i + 1] = None
     else:
         raise Exception('The inflection method in the config.ini file is not being recognized. Either use "pwl" for piece-wise linear trends or "ind" for independent trends. If none of these should be used, please delete the inflection method line or comment it out with "#".')
@@ -2766,7 +2810,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
 
     col = 0
     infl_count = 0
-    gap_col_counter = 0
+    # gap_col_counter = 0
 
     for k, i in enumerate(X_raw):
         # Get an array of values (either the intercept values 1 or the ongoing trend values)
@@ -2775,10 +2819,8 @@ def get_X_1(nanmask, ini, X_1_string, data):
         if i == None:   # If the column is a gap column, skip
             val = 0
             method = 1
-            gap_col_counter += 1
-            if gap_col_counter == 2:
-                infl_count += 1
-                gap_col_counter = 0
+            infl_count += 1
+
         elif i == 1:  # Rules for intercept column
             seas_comp = int(ini.get('intercept_seasonal_component', ini.get('default_seasonal_component', 2)))
             method = int(ini['intercept_method'])
@@ -3192,7 +3234,10 @@ def iup_reg_model(data, proxies, ini):
         siga_z = np.empty(np.atleast_1d(data.o3[0, ...]).shape) * np.nan
         X_string = ['intercept', 'trend']
     else:
-        infl_methods = [part.strip() for part in ini['inflection_method'].split(',') if part.strip()]
+        if isinstance(ini['inflection_method'], list) == True:
+            infl_methods = ini['inflection_method']
+        else:
+            infl_methods = [part.strip() for part in ini['inflection_method'].split(',') if part.strip()]
         if len(infl_methods) < len(data.inflection_index) + 1:
             ini['inflection_method'] = infl_methods * (len(data.inflection_index) + 1)
         else:
@@ -3208,7 +3253,7 @@ def iup_reg_model(data, proxies, ini):
             count = 1
             for method in ini['inflection_method']:
                 if method == 'gap':
-                    X_string.append('gap')
+                    X_string.append('intercept gap')
                     X_string.append('gap')
                 else:
                     X_string.append(f'intercept #{count}')

@@ -675,6 +675,9 @@ class AppWindow(QtWidgets.QMainWindow):
         else:
             self.inflection_point.setText('YYYY-MM')
 
+        if 'inflection_point' in self.ini and 'inflection_method' in self.ini:
+            self.infl_check.setChecked(True)
+
         if 'start_date' in self.ini:
             self.start_date.setText(dt.datetime.strftime(dt.datetime.strptime(self.ini['start_date'], '%Y-%m').date(), '%Y-%m'))
         else:
@@ -1676,9 +1679,6 @@ class AppWindow(QtWidgets.QMainWindow):
         y_is_log = 'pressure' in y_label.lower()
 
         bounds = np.arange(-10, 11, 1, dtype=int)
-        # cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
-        # cmap.set_under(plt.get_cmap('RdBu_r')(0))
-        # cmap.set_over(plt.get_cmap('RdBu_r')(255))
         colors = ["#08306b", "#0b4d6e", "#136b88", "#198aa2", "#1fa8bb", "#26c6d5", "#52dce1", "#7ee8eb", "#a5f2f3", "#e0ffff", "#fff4d6", "#fdd49e", "#fbc27b", "#fdae6b", "#fc8d3c", "#f16913", "#e6550d", "#d94801", "#b94702", "#a63603"]
         cmap = LinearSegmentedColormap.from_list('custom_diverging', colors, N=255)
         cmap.set_under(colors[0])
@@ -2126,79 +2126,130 @@ def get_enso_lag(enso, enso_lag, date_start, date_end):
     return enso
 
 
+# def get_proxy_time_overlap(ini, proxies, data):
+#     # Create a copy of the data and proxies to safely modify
+#     new_data = copy.deepcopy(data)
+#     new_proxies = copy.deepcopy(proxies)
+#
+#     # Ensure data times are consistently the 15th of each month
+#     new_data.time = np.array([date.replace(day=15) for date in data.time])
+#
+#     # Determine overlap start date
+#     if 'start_date' in ini:
+#         date_start = dt.datetime.strptime(ini['start_date'], '%Y-%m').date().replace(day=15)
+#         date_start = max(date_start, new_data.time[0])
+#     else:
+#         date_start = new_data.time[0]
+#
+#     for i in new_proxies:
+#         proxy_start = np.array(i.time)[0]
+#         if i.method == 0:
+#             continue
+#         if date_start < proxy_start:
+#             date_start = proxy_start
+#
+#     # Determine overlap end date
+#     if 'end_date' in ini:
+#         date_end = dt.datetime.strptime(ini['end_date'], '%Y-%m').date().replace(day=15)
+#         date_end = min(date_end, new_data.time[-1])
+#     else:
+#         date_end = new_data.time[-1]
+#
+#     for i in new_proxies:
+#         proxy_time = np.array(i.time)
+#         if i.method != 0:
+#             common_dates = np.intersect1d(proxy_time, new_data.time)
+#             if len(common_dates) > 0:
+#                 last_common = common_dates[-1]
+#                 date_end = min(date_end, last_common)
+#
+#     # Store index positions for slicing
+#     new_data.date_start = np.where(new_data.time == date_start)[0][0]
+#     new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
+#
+#     for i in new_proxies:
+#         if i.method == 0:
+#             continue
+#
+#         proxy_time = np.array(i.time)
+#         proxy_start_idx = np.where(proxy_time == dt.date(1979, 1, 15))[0]
+#         start_idx = proxy_start_idx[0] if proxy_start_idx.size > 0 else 0
+#
+#         temp_data = i.data[start_idx:]
+#
+#         # Normalize for each spatial index (or overall if 1D)
+#         for ii in np.ndindex(i.data.shape[1:]):
+#             subdata = temp_data[(slice(None),) + ii]
+#             min_val = np.nanmin(subdata)
+#             max_val = np.nanmax(subdata)
+#             if max_val > min_val:
+#                 norm_data = (subdata - min_val) / (max_val - min_val)
+#                 if len(i.data.shape) == 1:
+#                     norm_data = norm_data * 2 - 1
+#                 i.data[(slice(start_idx, start_idx + len(norm_data)),) + ii] = norm_data
+#
+#         # Slice to final overlap period
+#         i_start_idx = np.where(proxy_time == date_start)[0]
+#         i_end_idx = np.where(proxy_time == date_end)[0]
+#
+#         # Handle missing overlap boundaries
+#         i_start = i_start_idx[0] if i_start_idx.size > 0 else 0
+#         i_end = i_end_idx[0] + 1 if i_end_idx.size > 0 else len(proxy_time)
+#
+#         i.data = i.data[i_start:i_end]
+#         i.time = proxy_time[i_start:i_end]
+#
+#     return new_data, new_proxies
+
+
 def get_proxy_time_overlap(ini, proxies, data):
-    # Create a copy of the data and proxies to safely modify
+    # Copy objects to avoid side effects
     new_data = copy.deepcopy(data)
     new_proxies = copy.deepcopy(proxies)
 
-    # Ensure data times are consistently the 15th of each month
-    new_data.time = np.array([date.replace(day=15) for date in data.time])
+    # Ensure consistent day-of-month (15th)
+    new_data.time = np.array([date.replace(day=15) for date in new_data.time])
 
-    # Determine overlap start date
+    # Convert ini dates if they exist
+    date_start = dt.date.min
+    date_end = dt.date.max
     if 'start_date' in ini:
         date_start = dt.datetime.strptime(ini['start_date'], '%Y-%m').date().replace(day=15)
-        date_start = max(date_start, new_data.time[0])
-    else:
-        date_start = new_data.time[0]
-
-    for i in new_proxies:
-        proxy_start = np.array(i.time)[0]
-        if date_start < proxy_start:
-            date_start = proxy_start
-
-    # Determine overlap end date
     if 'end_date' in ini:
         date_end = dt.datetime.strptime(ini['end_date'], '%Y-%m').date().replace(day=15)
-        date_end = min(date_end, new_data.time[-1])
-    else:
-        date_end = new_data.time[-1]
 
+    # Start from main data axis
+    valid_dates = new_data.time[(new_data.time >= date_start) & (new_data.time <= date_end)]
+
+    # Intersect with each proxy
     for i in new_proxies:
-        proxy_time = np.array(i.time)
-        if i.method != 0:
-            common_dates = np.intersect1d(proxy_time, new_data.time)
-            if len(common_dates) > 0:
-                last_common = common_dates[-1]
-                date_end = min(date_end, last_common)
+        if i.method == 0:  # skip if inactive
+            continue
+        proxy_time = np.array([t.replace(day=15) for t in i.time])
+        # restrict to ini date range
+        proxy_valid = proxy_time[(proxy_time >= date_start) & (proxy_time <= date_end)]
+        # intersect with main valid_dates
+        valid_dates = np.intersect1d(valid_dates, proxy_valid)
 
-    # Store index positions for slicing
-    new_data.date_start = np.where(new_data.time == date_start)[0][0]
-    new_data.date_end = np.where(new_data.time == date_end)[0][0] + 1
+    # If nothing overlaps, return empty
+    if len(valid_dates) == 0:
+        return None, None
 
+    # Slice new_data
+    mask_data = np.isin(new_data.time, valid_dates)
+    new_data.time = new_data.time[mask_data]
+    new_data.data = new_data.o3[mask_data]
+
+    # Slice proxies
     for i in new_proxies:
         if i.method == 0:
             continue
-
-        proxy_time = np.array(i.time)
-        proxy_start_idx = np.where(proxy_time == dt.date(1979, 1, 15))[0]
-        start_idx = proxy_start_idx[0] if proxy_start_idx.size > 0 else 0
-
-        temp_data = i.data[start_idx:]
-
-        # Normalize for each spatial index (or overall if 1D)
-        for ii in np.ndindex(i.data.shape[1:]):
-            subdata = temp_data[(slice(None),) + ii]
-            min_val = np.nanmin(subdata)
-            max_val = np.nanmax(subdata)
-            if max_val > min_val:
-                norm_data = (subdata - min_val) / (max_val - min_val)
-                if len(i.data.shape) == 1:
-                    norm_data = norm_data * 2 - 1
-                i.data[(slice(start_idx, start_idx + len(norm_data)),) + ii] = norm_data
-
-        # Slice to final overlap period
-        i_start_idx = np.where(proxy_time == date_start)[0]
-        i_end_idx = np.where(proxy_time == date_end)[0]
-
-        # Handle missing overlap boundaries
-        i_start = i_start_idx[0] if i_start_idx.size > 0 else 0
-        i_end = i_end_idx[0] + 1 if i_end_idx.size > 0 else len(proxy_time)
-
-        i.data = i.data[i_start:i_end]
-        i.time = proxy_time[i_start:i_end]
+        proxy_time = np.array([t.replace(day=15) for t in i.time])
+        mask_proxy = np.isin(proxy_time, valid_dates)
+        i.time = proxy_time[mask_proxy]
+        i.data = i.data[mask_proxy]
 
     return new_data, new_proxies
-
 
 def set_data_limits(data, ini):
     slices = []
@@ -2727,7 +2778,6 @@ def get_inflection_index(ini, data):
         for k, i in enumerate(data.time.astype(dt.datetime)):
             if i.year == date.year and i.month == date.month:
                 inflection_index.append(k)
-        inflection_index[-1] = inflection_index[-1] - data.date_start
 
     return inflection_index
 
@@ -3279,7 +3329,7 @@ def iup_reg_model(data, proxies, ini):
     # check how the data should be averaged
     check = averaging_window_text_check(ini.get('averaging_window', ''))
     anom_check = ini.get('anomaly', 'False')
-    time = pd.DatetimeIndex(data.time[data.date_start:data.date_end])
+    time = pd.DatetimeIndex(data.time)
     time_log = np.unique(time.year, return_index=True)[1] if check != 0 else slice(None)
 
     # Creating new X_string depending on method used for trend and intercept
@@ -3292,7 +3342,7 @@ def iup_reg_model(data, proxies, ini):
     groups = get_string_groups(X_string)
 
     if check == 0:
-        X_all = np.full((data.o3[data.date_start:data.date_end, ...].shape + (len(X_string),)), np.nan, dtype='f4')
+        X_all = np.full((data.o3.shape + (len(X_string),)), np.nan, dtype='f4')
     elif check == 1:
         X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
@@ -3334,7 +3384,7 @@ def iup_reg_model(data, proxies, ini):
 
     while not it.finished:
         print(str(it.multi_index) + ': calculating trend')
-        data_arr = data.o3[(slice(None),) + it.multi_index][data.date_start:data.date_end]
+        data_arr = data.o3[(slice(None),) + it.multi_index]
         data_arr = filter_time_series(data_arr, monthly=True, min_window_years=5, min_valid_fraction=0.5, check_yearly_validity=True)
         if check == 0 and anom_check == 'True':
             for k in range(12):
@@ -3417,7 +3467,7 @@ def iup_reg_model(data, proxies, ini):
         # Go to next iteration:
         it.iternext()
 
-    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[data.date_start:data.date_end][time_log], data_all]
+    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[time_log], data_all]
 
     return trenda_z, siga_z, diagnostic
 

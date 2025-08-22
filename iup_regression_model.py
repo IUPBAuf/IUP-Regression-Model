@@ -2201,55 +2201,113 @@ def get_enso_lag(enso, enso_lag, date_start, date_end):
 #
 #     return new_data, new_proxies
 
-
 def get_proxy_time_overlap(ini, proxies, data):
-    # Copy objects to avoid side effects
     new_data = copy.deepcopy(data)
     new_proxies = copy.deepcopy(proxies)
 
-    # Ensure consistent day-of-month (15th)
-    new_data.time = np.array([date.replace(day=15) for date in new_data.time])
+    # --- Normalize times to 15th of month ---
+    new_data.time = np.array([t.replace(day=15) for t in new_data.time], dtype=object)
+    for p in new_proxies:
+        p.time = np.array([t.replace(day=15) for t in p.time], dtype=object)
 
-    # Convert ini dates if they exist
-    date_start = dt.date.min
-    date_end = dt.date.max
+    # --- Parse ini dates ---
     if 'start_date' in ini:
         date_start = dt.datetime.strptime(ini['start_date'], '%Y-%m').date().replace(day=15)
+    else:
+        date_start = dt.date.min
+
     if 'end_date' in ini:
         date_end = dt.datetime.strptime(ini['end_date'], '%Y-%m').date().replace(day=15)
+    else:
+        date_end = dt.date.max
 
-    # Start from main data axis
-    valid_dates = new_data.time[(new_data.time >= date_start) & (new_data.time <= date_end)]
-
-    # Intersect with each proxy
-    for i in new_proxies:
-        if i.method == 0:  # skip if inactive
+    # --- Find overall proxy time span ---
+    proxy_times_all = []
+    for p in new_proxies:
+        if getattr(p, 'method', 1) == 0:
             continue
-        proxy_time = np.array([t.replace(day=15) for t in i.time])
-        # restrict to ini date range
-        proxy_valid = proxy_time[(proxy_time >= date_start) & (proxy_time <= date_end)]
-        # intersect with main valid_dates
-        valid_dates = np.intersect1d(valid_dates, proxy_valid)
+        proxy_times_all.extend(p.time.tolist())
 
-    # If nothing overlaps, return empty
-    if len(valid_dates) == 0:
-        return None, None
+    if proxy_times_all:
+        proxy_min, proxy_max = min(proxy_times_all), max(proxy_times_all)
+    else:
+        proxy_min, proxy_max = new_data.time[0], new_data.time[-1]
 
-    # Slice new_data
-    mask_data = np.isin(new_data.time, valid_dates)
-    new_data.time = new_data.time[mask_data]
-    new_data.data = new_data.o3[mask_data]
+    # --- Common overlap for dataset + proxies + ini ---
+    overall_start = max(date_start, new_data.time[0], proxy_min)
+    overall_end   = min(date_end,   new_data.time[-1], proxy_max)
 
-    # Slice proxies
-    for i in new_proxies:
-        if i.method == 0:
+    # --- Build continuous monthly axis (always 15th) ---
+    y, m = overall_start.year, overall_start.month
+    all_times = []
+    while (y, m) <= (overall_end.year, overall_end.month):
+        all_times.append(dt.date(y, m, 15))
+        m += 1
+        if m == 13:
+            m = 1
+            y += 1
+    all_times = np.array(all_times, dtype=object)
+
+    # --- Expand main dataset to all_times with NaNs ---
+    data_arr = getattr(new_data, 'data', getattr(new_data, 'o3'))
+    in_window = np.isin(new_data.time, all_times)
+    tgt_slots = np.isin(all_times, new_data.time)
+    expanded_data = np.full((len(all_times),) + data_arr.shape[1:], np.nan, dtype=float)
+    expanded_data[tgt_slots] = data_arr[in_window]
+    new_data.time = all_times
+    if hasattr(new_data, 'data'):
+        new_data.data = expanded_data
+    else:
+        new_data.o3 = expanded_data
+
+    # --- Normalize proxies and expand ---
+    for p in new_proxies:
+        if getattr(p, 'method', 1) == 0:
+            # still align with NaNs
+            arr = getattr(p, 'data')
+            shape = (len(all_times),) + arr.shape[1:]
+            if hasattr(p, 'data'):
+                p.data = np.full(shape, np.nan)
+            else:
+                p.o3 = np.full(shape, np.nan)
+            p.time = all_times
             continue
-        proxy_time = np.array([t.replace(day=15) for t in i.time])
-        mask_proxy = np.isin(proxy_time, valid_dates)
-        i.time = proxy_time[mask_proxy]
-        i.data = i.data[mask_proxy]
+
+        arr = getattr(p, 'data')
+
+        # --- Normalize over full period from 1979-01 onwards ---
+        try_start = dt.date(1979, 1, 15)
+        start_idx = np.where(p.time == try_start)[0]
+        start_idx = int(start_idx[0]) if start_idx.size > 0 else 0
+        temp = arr[start_idx:]
+
+        if arr.ndim == 1:
+            vmin, vmax = np.nanmin(temp), np.nanmax(temp)
+            if vmax > vmin:
+                norm = (temp - vmin) / (vmax - vmin)
+                norm = norm * 2 - 1
+                arr[start_idx:start_idx + len(norm)] = norm
+        else:
+            for idx in np.ndindex(arr.shape[1:]):
+                sub = temp[(slice(None),) + idx]
+                vmin, vmax = np.nanmin(sub), np.nanmax(sub)
+                if vmax > vmin:
+                    norm = (sub - vmin) / (vmax - vmin)
+                    arr[(slice(start_idx, start_idx + len(norm)),) + idx] = norm
+
+        # --- Expand to all_times with NaNs ---
+        tgt_slots = np.isin(all_times, p.time)
+        src_rows  = np.isin(p.time, all_times)
+        expanded = np.full((len(all_times),) + arr.shape[1:], np.nan, dtype=float)
+        expanded[tgt_slots] = arr[src_rows]
+        p.time = all_times
+        if hasattr(p, 'data'):
+            p.data = expanded
+        else:
+            p.o3 = expanded
 
     return new_data, new_proxies
+
 
 def set_data_limits(data, ini):
     slices = []

@@ -1610,12 +1610,12 @@ class AppWindow(QtWidgets.QMainWindow):
         plot_number = 1
 
         # Include a breakpoint if there are inflection points
-        if self.current_ini.get('inflection_point', None):
-            inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
-            for inflection_point in sorted(inflection_points):
-                breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
-                X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
-                Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+        # if self.current_ini.get('inflection_point', None):
+        #     inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
+        #     for inflection_point in sorted(inflection_points):
+        #         breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
+        #         X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
+        #         Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
 
         self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
@@ -2253,7 +2253,8 @@ def get_proxy_time_overlap(ini, proxies, data):
     in_window = np.isin(new_data.time, all_times)
     tgt_slots = np.isin(all_times, new_data.time)
     expanded_data = np.full((len(all_times),) + data_arr.shape[1:], np.nan, dtype=float)
-    expanded_data[tgt_slots] = data_arr[in_window]
+    data_arr_filled = np.ma.filled(data_arr, np.nan)  # masked → NaN
+    expanded_data[tgt_slots] = data_arr_filled[in_window]
     new_data.time = all_times
     if hasattr(new_data, 'data'):
         new_data.data = expanded_data
@@ -2299,7 +2300,8 @@ def get_proxy_time_overlap(ini, proxies, data):
         tgt_slots = np.isin(all_times, p.time)
         src_rows  = np.isin(p.time, all_times)
         expanded = np.full((len(all_times),) + arr.shape[1:], np.nan, dtype=float)
-        expanded[tgt_slots] = arr[src_rows]
+        arr_filled = np.ma.filled(arr, np.nan)  # masked → NaN
+        expanded[tgt_slots] = arr_filled[src_rows]
         p.time = all_times
         if hasattr(p, 'data'):
             p.data = expanded
@@ -3077,7 +3079,6 @@ def normalize(X_2):
 
 
 def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
-
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
     groups = get_string_groups(X_string)
@@ -3088,7 +3089,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     except:
         print('Calculation failed: NaNs')
         return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, np.nan
-
     # Carlo's autoregression
 
     fity = np.matmul(X_clean, beta)
@@ -3190,16 +3190,26 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                 print('NOT YET FINISHED')
                 print(chr(sum(range(ord(min(str(not ())))))))
             else:
+                count = 1
                 for keys, indices in groups.items():
                     if keys[0] == 'intercept' or keys[0] == 'proxy':
                         continue
                     if keys[1] == 'month-of-the-year':
+                        while keys[-1] > count:
+                            trenda_z.append(np.nan)
+                            siga_z.append(np.nan)
+                            count += 1
                         trenda_z.append(np.nanmean(betaa[indices]) * mult)
                         # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
                         siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
                     else:
+                        while keys[-1] > count:
+                            trenda_z.append(np.nan)
+                            siga_z.append(np.nan)
+                            count += 1
                         trenda_z.append(betaa[indices[0]] * mult)
                         siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                    count += 1
                 # siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
                 # trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
 
@@ -3210,6 +3220,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     if len(trenda_z) == 1:
         return trenda_z.pop(), siga_z.pop(), beta, betaa, np.diag(covbetaa)
     else:
+        print(trenda_z)
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
 
 
@@ -3484,7 +3495,6 @@ def iup_reg_model(data, proxies, ini):
             print('Not enough values to compute the trend! ' + f'{len(mask_time) / len(nanmask)*100:.2f}' + '% of data available.')
             it.iternext()
             continue
-
         X_1 = get_X_1(nanmask, ini, X_1_string, data)
         X_2 = get_X_2(proxies, nanmask, X_proxy_size, it, data)
 

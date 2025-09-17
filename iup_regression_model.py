@@ -794,7 +794,7 @@ class AppWindow(QtWidgets.QMainWindow):
         canvas = self.figure_tabs.widget(self.figure_tabs.currentIndex()).findChild(FigureCanvas)
         if canvas:
             if not canvas.figure.axes:
-                print('Canvas is empty. Please plto something before saving.')
+                print('Canvas is empty. Please plot something before saving.')
                 return
             save_path, _ = QFileDialog.getSaveFileName(self, "Save Figure", canvas.figure.axes[0].get_title().replace('\n', ' ') + '.png', "PNG Files (*.png);;All Files (*)")
             if save_path:
@@ -1009,6 +1009,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.data_list.clear()
         for i in self.list_of_data:
             self.data_list.addItem(i.name)
+
+        # Select last item
+        self.data_list.setCurrentItem(self.data_list.item(self.data_list.count() - 1))
 
         self.add_data_dia()
 
@@ -1645,8 +1648,9 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.model_canvas.draw()
 
-    def plot_contour_figure(self):
+    def OLD_plot_contour_figure(self):
         # Clear the figure
+
         self.con_canvas.figure.clf()
 
         trends = self.trends
@@ -1733,6 +1737,120 @@ class AppWindow(QtWidgets.QMainWindow):
 
         self.con_canvas.draw()
 
+    def plot_contour_figure(self):
+        self.con_canvas.figure.clf()
+
+        trends = self.trends
+        signis = self.signi
+        data = copy.deepcopy(self.current_data)
+
+        # Get dimension combo boxes indices
+        plot_indices = ()
+        for k, combo in enumerate(self.dim_con_boxes):
+            if combo.currentIndex() == 0:
+                plot_indices += (slice(None),)
+                x_grid = getattr(data, data.dim_array[1:][k])
+                x_label = getattr(data, data.dim_array[1:][k] + '_unit')
+            elif combo.currentIndex() == 1:
+                plot_indices += (slice(None),)
+                y_grid = getattr(data, data.dim_array[1:][k])
+                y_label = getattr(data, data.dim_array[1:][k] + '_unit')
+            else:
+                plot_indices += (combo.currentIndex() - 2,)
+
+        # determine how many subplots to make
+        inflections = self.current_ini.get('inflection_point', '')
+        inflection_dates = [s.strip() for s in inflections.split(',') if s.strip()]
+        n_plots = 1 if not inflection_dates else len(inflection_dates) + 1
+
+        # generate subtitles if we have inflection dates
+        subtitles = []
+        if n_plots == 1:
+            subtitles = [None]  # no subtitle, just one plot
+        else:
+            subtitles.append(f"before {inflection_dates[0]}")
+            for i in range(len(inflection_dates) - 1):
+                subtitles.append(f"between {inflection_dates[i]} and {inflection_dates[i + 1]}")
+            subtitles.append(f"after {inflection_dates[-1]}")
+
+        # prepare figure and axes
+        fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 5), squeeze=False)
+        axes = axes[0]  # flatten row
+
+        bounds = np.arange(-10, 11, 1, dtype=int)
+        colors = ["#08306b", "#0b4d6e", "#136b88", "#198aa2", "#1fa8bb", "#26c6d5", "#52dce1", "#7ee8eb", "#a5f2f3", "#e0ffff", "#fff4d6", "#fdd49e", "#fbc27b", "#fdae6b", "#fc8d3c", "#f16913",
+                  "#e6550d", "#d94801", "#b94702", "#a63603"]
+        cmap = LinearSegmentedColormap.from_list('custom_diverging', colors, N=255)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+
+        for idx in range(n_plots):
+            ax = axes[idx]
+
+            # select slice of trend and signi depending on subplot
+            this_indices = plot_indices + (idx,) if n_plots > 1 else plot_indices
+            if trends[this_indices].shape != (len(y_grid), len(x_grid)):
+                trend = trends[this_indices].T
+                signi = signis[this_indices].T > 2
+            else:
+                trend = trends[this_indices]
+                signi = signis[this_indices] > 2
+            masked_uncertainty = np.where(np.isnan(trend), np.nan, signi)
+
+            # plotting
+            if self.con_alternative.isChecked():
+                cf = ax.imshow(trend, cmap=cmap, norm=norm,
+                               extent=[x_grid[0] + (x_grid[0] - x_grid[1]) / 2,
+                                       x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2,
+                                       y_grid[0] + (y_grid[0] - y_grid[1]) / 2,
+                                       y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2],
+                               origin='lower', aspect='auto', alpha=0.7)
+            else:
+                cf = ax.contourf(x_grid, y_grid, trend, cmap=cmap, levels=bounds, norm=norm, extend='both')
+                ax.contour(x_grid, y_grid, trend, levels=bounds, colors=('k',), alpha=0.7, norm=norm, extend='both', linewidths=1)
+                if self.con_uncertainty.isChecked():
+                    ax.contourf(x_grid, y_grid, masked_uncertainty, levels=[0, 0.5], colors='none', hatches=['\\\\'])
+                    ax.contour(x_grid, y_grid, masked_uncertainty, levels=[0.5], colors='#DBDBDB', norm=norm)
+
+            ax.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
+            ax.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
+            if self.con_invert.isChecked():
+                ax.set_ylim(ax.get_ylim()[::-1])
+
+            # axis labels
+            ax.set_xlabel(x_label, fontsize=14)
+            if idx == 0:
+                ax.set_ylabel(y_label, fontsize=14)
+            else:
+                ax.set_yticklabels([])  # hide y tick labels
+                ax.set_ylabel('')
+
+            # add subplot subtitle if applicable
+            if subtitles[idx]:
+                ax.set_title(subtitles[idx], fontsize=12)
+
+            # log scaling
+            if 'pressure' in x_label.lower():
+                ax.set_xscale('log')
+            if 'pressure' in y_label.lower():
+                ax.set_yscale('log')
+
+        # one big title for the whole figure
+        fig.suptitle(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_con_boxes]))), fontsize=16)
+
+        # add colorbar to the last subplot
+        divider = make_axes_locatable(axes[-1])
+        cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
+        cbar = fig.colorbar(cf, cax=cbar_ax, label='[%/decade]')
+        cbar.set_ticks(bounds)
+
+        self.con_canvas.figure = fig
+        self.con_canvas.axes = axes
+        self.con_canvas.figure.tight_layout(rect=[0, 0, 1, 0.95])  # leave space for suptitle
+        toolbar = NavigationToolbar(self.con_canvas, self)
+        self.con_canvas.draw()
+
     def plot_resi_figure(self):
         # Clear the figure
         self.resi_canvas.figure.clf()
@@ -1778,7 +1896,9 @@ class AppWindow(QtWidgets.QMainWindow):
 
         trend_string = "\n".join([f"trend {k + 1}: {v:.2f}%/decade" for k, v in enumerate(Y_trend)])
 
-        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], self.betaa[tuple(plot_indices)][valid_cols])
+        # Model, slope, residuals
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols],
+                            np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
         Y_slope = Y_slope[valid_rows]
         Y_all_but_trend = np.array(resi_X).T @ np.array(resi_beta)
@@ -1786,30 +1906,33 @@ class AppWindow(QtWidgets.QMainWindow):
         Y_resi_2 = Y[valid_rows] - Y_model
         plot_number = 1
 
-        # Include a breakpoint if there are inflection points
-        if self.current_ini.get('inflection_point', None):
-            breakpoint_index = np.where(self.time[valid_rows] >= dt.datetime.strptime(self.current_ini.get('inflection_point'), '%Y-%m').date())[0][0]
-            X = np.insert(X, breakpoint_index, X[breakpoint_index])
-            Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
-            Y_resi_2 = np.insert(Y_resi_2, breakpoint_index, np.nan)
+        # (optional) inflection points → adapt to multi-point scheme if needed
+        # if self.current_ini.get('inflection_point', None):
+        #     inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m')
+        #                          for d in self.current_ini.get('inflection_point').split(',')]
+        #     for inflection_point in sorted(inflection_points):
+        #         breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month)
+        #                                      for t in self.time[valid_rows]])[0][0]
+        #         X = np.insert(X, breakpoint_index, X[breakpoint_index])
+        #         Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+        #         Y_resi_2 = np.insert(Y_resi_2, breakpoint_index, np.nan)
 
-        self.resi_canvas.axes_list = [self.resi_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
-
-        bounds = [-7, -5, -3, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 3, 5, 7]
-        # bounds = np.arange(-9, 10, 1, dtype=int)
-        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
-        cmap.set_under(plt.get_cmap('RdBu_r')(0))
-        cmap.set_over(plt.get_cmap('RdBu_r')(255))
-        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+        self.resi_canvas.axes_list = [self.resi_canvas.figure.add_subplot(plot_number, 1, i + 1)
+                                      for i in range(plot_number)]
 
         for k, ax in enumerate(self.resi_canvas.axes_list):
             ax.plot(X, Y_resi_2 + Y_slope, label='Residuals', linewidth=1.8)
-            # ax.plot(self.time[valid_rows], Y_resi[valid_rows], label='Residuals OLD', linewidth=1.8)
-            ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+            ax.plot(X, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'),
+                                              pe.Normal()],
+                    label='Trend', linewidth=1.3)
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
-            ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
-            ax.set_title(data.name + '\n residuals at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_resi_boxes]))))
+            ax.text(0.05, 0.95, trend_string, transform=ax.transAxes,
+                    fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
+            ax.set_title(data.name + '\n residuals at ' + ', '.join(
+                f"{dim} {val}" for dim, val in zip(data.dim_array[1:],
+                                                   [combo.currentText() for combo in self.dim_resi_boxes])))
+
         toolbar = NavigationToolbar(self.resi_canvas, self)
         self.resi_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
         self.resi_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
@@ -3220,7 +3343,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     if len(trenda_z) == 1:
         return trenda_z.pop(), siga_z.pop(), beta, betaa, np.diag(covbetaa)
     else:
-        print(trenda_z)
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.diag(covbetaa)
 
 
@@ -3594,4 +3716,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

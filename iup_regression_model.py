@@ -607,6 +607,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.model_layout = QVBoxLayout(self.model_fig_widget)
         self.model_canvas = MplCanvas(self.model_fig_widget)
         self.model_layout.addWidget(self.model_canvas)
+        self.model_toolbar = NavigationToolbar(self.model_canvas, self.model_fig_widget)
+        self.model_layout.addWidget(self.model_toolbar)
+
 
         # Plotting Contour
         self.dim_con_layout = self.dim_con_widget.layout()
@@ -615,6 +618,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.con_layout = QVBoxLayout(self.contour_fig_widget)
         self.con_canvas = MplCanvas(self.contour_fig_widget)
         self.con_layout.addWidget(self.con_canvas)
+        self.con_toolbar = NavigationToolbar(self.con_canvas, self.contour_fig_widget)
+        self.con_layout.addWidget(self.con_toolbar)
 
         # Plotting Residuals
         self.dim_resi_layout = self.dim_resi_widget.layout()
@@ -623,6 +628,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.resi_layout = QVBoxLayout(self.resi_fig_widget)
         self.resi_canvas = MplCanvas(self.resi_fig_widget)
         self.resi_layout.addWidget(self.resi_canvas)
+        self.resi_toolbar = NavigationToolbar(self.resi_canvas, self.resi_fig_widget)
+        self.resi_layout.addWidget(self.resi_toolbar)
 
         # Plotting Measurement Density
         self.dim_cell_layout = self.dim_cell_widget.layout()
@@ -641,6 +648,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxy_layout = QVBoxLayout(self.proxy_fig_widget)
         self.proxy_canvas = MplCanvas(self.proxy_fig_widget)
         self.proxy_layout.addWidget(self.proxy_canvas)
+        self.proxy_toolbar = NavigationToolbar(self.proxy_canvas, self.proxy_fig_widget)
+        self.proxy_layout.addWidget(self.proxy_toolbar)
 
         # Plotting Proxy Contour
         self.dim_proxy_con_layout = self.dim_proxy_con_widget.layout()
@@ -649,6 +658,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxy_con_layout = QVBoxLayout(self.proxy_con_fig_widget)
         self.proxy_con_canvas = MplCanvas(self.proxy_con_fig_widget)
         self.proxy_con_layout.addWidget(self.proxy_con_canvas)
+        self.proxy_con_toolbar = NavigationToolbar(self.proxy_con_canvas, self.proxy_con_fig_widget)
+        self.proxy_con_layout.addWidget(self.proxy_con_toolbar)
 
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
@@ -1619,24 +1630,28 @@ class AppWindow(QtWidgets.QMainWindow):
         Y_slope = Y_slope[valid_rows]
         plot_number = 1
 
+        # inflection_methods = [str(m).strip().lower() for m in self.current_ini.get('inflection_method', '')]
         if self.current_ini.get('inflection_point', None):
             inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
             for k, inflection_point in enumerate(sorted(inflection_points)):
                 # Find index where time >= inflection point
-                breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month)
-                                             for t in self.time[valid_rows]])[0][0]
+                breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
 
                 # Insert NaN into both X_slope and Y_slope at the breakpoint
                 X_slope = np.insert(X_slope, breakpoint_index + k, X_slope[breakpoint_index + k])
                 Y_slope = np.insert(Y_slope, breakpoint_index + k, np.nan)
 
-        # Include a breakpoint if there are inflection points
-        # if self.current_ini.get('inflection_point', None):
-        #     inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
-        #     for inflection_point in sorted(inflection_points):
-        #         breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
-        #         X_slope = np.insert(X_slope, breakpoint_index, X_slope[breakpoint_index])
-        #         Y_slope = np.insert(Y_slope, breakpoint_index, np.nan)
+        Y_slope_clean = Y_slope.copy()
+
+        nan_idx = np.where(np.isnan(Y_slope_clean))[0]
+        segment_edges = np.concatenate(([-1], nan_idx, [len(Y_slope_clean)]))
+        for start, end in zip(segment_edges[:-1], segment_edges[1:]):
+            seg = Y_slope_clean[start + 1:end]
+            if seg.size == 0:
+                continue
+            if np.allclose(seg, 0.0, atol=1e-10, equal_nan=False):
+                Y_slope_clean[start + 1:end] = np.nan
+        Y_slope = Y_slope_clean
 
         self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
@@ -1663,7 +1678,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
         self.model_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
         self.model_canvas.figure.tight_layout()
-        toolbar = NavigationToolbar(self.model_canvas, self)
+        # toolbar = NavigationToolbar(self.model_canvas, self)
+        # toolbar.setParent(self.model_canvas.parent())
+        # toolbar.show()
 
         self.model_canvas.draw()
 
@@ -1706,8 +1723,10 @@ class AppWindow(QtWidgets.QMainWindow):
             subtitles.append(f"after {inflection_dates[-1]}")
 
         # prepare figure and axes
-        fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 5), squeeze=False)
-        axes = axes[0]  # flatten row
+        fig = self.con_canvas.figure
+        fig.clf()
+        axes = fig.subplots(1, n_plots, squeeze=False)[0]
+        # axes = axes[0]  # flatten row
 
         bounds = np.arange(-10, 11, 1, dtype=int)
         colors = ["#08306b", "#0b4d6e", "#136b88", "#198aa2", "#1fa8bb", "#26c6d5", "#52dce1", "#7ee8eb", "#a5f2f3", "#e0ffff", "#fff4d6", "#fdd49e", "#fbc27b", "#fdae6b", "#fc8d3c", "#f16913",
@@ -1806,7 +1825,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.con_canvas.figure = fig
         self.con_canvas.axes = axes
         self.con_canvas.figure.tight_layout(rect=[0, 0, 1, 0.95])  # leave space for suptitle
-        toolbar = NavigationToolbar(self.con_canvas, self)
         self.con_canvas.draw()
 
     def plot_resi_figure(self):
@@ -1953,14 +1971,6 @@ class AppWindow(QtWidgets.QMainWindow):
                     Y_beta.append(None)
                 check_idx += 1
 
-        # print(X[:, 11:16].shape)
-        # print(beta[11:16])
-        # fig, ax = plt.subplots(figsize=(16, 9))
-        # ax.plot(date, (X[:, 11:16] @ beta[11:16])[valid_rows], 'green', label='solar')
-        # ax.plot(date, Y[0][valid_rows], 'red', label='og_solar')
-        # ax.legend(loc='upper left', fontsize=16)
-        # plt.tight_layout()
-        # plt.show()
         self.proxy_canvas.axes_list = [self.proxy_canvas.figure.add_subplot(len(Y), 1, i + 1) for i in range(len(Y))]
         colors = cm.cmaps['hawaii'](np.linspace(0, 0.6, len(Y)))
 
@@ -2119,7 +2129,7 @@ def load_config_ini(ini_path):
         # Count the number of additional_proxy_path keys
         add_proxy_count = 0
         for line in f:
-            if '=' not in line or line[0] == '#':
+            if '=' not in line or line[0] == '#' or line[0] == ';':
                 # Skip line in config file if no = sign is in there or if it starts with #
                 continue
             (key, val) = line.split('=')
@@ -2144,7 +2154,7 @@ def load_config_ini(ini_path):
     with open(ini_path, 'r') as f:
         add_proxy_count = -1
         for line in f:
-            if '=' not in line or line[0] == '#':
+            if '=' not in line or line[0] == '#' or line[0] == ';':
                 # Skip line in config file if no = sign is in there or if it starts with #
                 continue
             (key, val) = line.split('=')
@@ -2157,7 +2167,6 @@ def load_config_ini(ini_path):
                 ini[key][add_proxy_count] = val
             else:
                 ini[key] = val
-    # ini['additional_proxy_method'] = ini.get('additional_proxy_method', ini.get('default_proxy_method', 1))
 
     return ini
 
@@ -2343,6 +2352,9 @@ def get_proxy_time_overlap(ini, proxies, data):
     else:
         new_data.o3 = expanded_data
 
+    # Monthly/yearly mean check
+    check = averaging_window_text_check(ini.get('averaging_window', ''))
+
     # --- Normalize proxies and expand ---
     for p in new_proxies:
         if getattr(p, 'method', 1) == 0:
@@ -2358,27 +2370,41 @@ def get_proxy_time_overlap(ini, proxies, data):
 
         arr = getattr(p, 'data')
 
-        # --- Normalize over full period from 1979-01 onwards ---
+        if check == 2:  # If the trends gets taken over an monthly average (e.g. Sep) then the normalization is also only over this specific month or the specific months
+            month_index = re.split(r',\s*', ini.get('averaging_window', ''))
+            month_index_set = {int(m) for m in month_index}
+            mask = np.array([d.month in month_index_set for d in p.time])
+        else:
+            mask = np.ones(len(p.time), dtype=bool)
+
         try_start = dt.date(1979, 1, 15)
         start_idx = np.where(p.time == try_start)[0]
         start_idx = int(start_idx[0]) if start_idx.size > 0 else 0
-        temp = arr[start_idx:]
 
-        print(p.name)
-        print(arr.ndim)
+        mask = mask[start_idx:]  # boolean mask for the tail
+        temp = arr[start_idx:][mask]  # values you extracted (masked)
+
         if arr.ndim == 1:
             vmin, vmax = np.nanmin(temp), np.nanmax(temp)
             if vmax > vmin:
                 norm = (temp - vmin) / (vmax - vmin)
-                norm = norm * 2 - 1
-                arr[start_idx:start_idx + len(norm)] = norm
+                norm = norm - 0.5
+                # norm = (temp - np.nanmean(temp)) / np.nanstd(temp)
+                sub = arr[start_idx:]  # view of the tail
+                sub[mask] = norm  # write only to masked positions
         else:
+            sub = arr[start_idx:]  # view of the tail: shape (Ntail, ...)
             for idx in np.ndindex(arr.shape[1:]):
-                sub = temp[(slice(None),) + idx]
-                vmin, vmax = np.nanmin(sub), np.nanmax(sub)
+                # temp has shape (Nmasked, ...) because it's already masked
+                sub_masked = temp[(slice(None),) + idx]  # shape (Nmasked,)
+                vmin, vmax = np.nanmin(sub_masked), np.nanmax(sub_masked)
                 if vmax > vmin:
-                    norm = (sub - vmin) / (vmax - vmin)
-                    arr[(slice(start_idx, start_idx + len(norm)),) + idx] = norm
+                    norm = (sub_masked - vmin) / (vmax - vmin)
+                    if 'aod' not in p.name.lower():
+                        norm = norm - 0.5
+                    # assign back into the tail view at masked positions
+                    sub[(mask,) + idx] = norm
+        arr[start_idx:] = sub
 
         # --- Expand to all_times with NaNs ---
         tgt_slots = np.isin(all_times, p.time)
@@ -3317,6 +3343,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     else:
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.array(covbetaa_z)
 
+
 def iup_reg_model(data, proxies, ini):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
     data = set_data_limits(data, ini)
@@ -3390,9 +3417,9 @@ def iup_reg_model(data, proxies, ini):
     X_string = X_1_string + X_2_string
     groups = get_string_groups(X_string)
 
-    if check == 0:
+    if check == 0:      # No averaging
         X_all = np.full((data.o3.shape + (len(X_string),)), np.nan, dtype='f4')
-    elif check == 1:
+    elif check == 1:    # Yearly
         X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
         for i in proxies:
             for kk, ii in enumerate(np.unique(time.year)):
@@ -3404,7 +3431,7 @@ def iup_reg_model(data, proxies, ini):
         if getattr(data, 'inflection_index', None)[0]:
             for k, i in enumerate(data.inflection_index):
                 data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]  # Change inflection point to reflect the yearly data
-    elif check == 2:
+    elif check == 2:    # Monthly
         month_index = re.split(r',\s*', ini.get('averaging_window', ''))
         month_index = np.array([int(num) for num in month_index])
         X_all = np.full(((len(np.unique(time.year)),) + data.o3[0, ...].shape + (len(X_string),)), np.nan, dtype='f4')
@@ -3418,7 +3445,7 @@ def iup_reg_model(data, proxies, ini):
                 elif np.count_nonzero((arr != 0) & ~np.isnan(arr)) / arr.size <= float(ini.get('skip_percentage', 0.75)):
                     i.data[kk] = np.nan
                     continue
-                i.data[kk] = np.nanmean(i.data[time_index][np.in1d(time[time_index].month, month_index)])
+                i.data[kk] = np.nanmean(i.data[time_index][np.in1d(time[time_index].month, month_index)], axis=0)
             i.data = i.data[:len(np.unique(time.year))]
         if getattr(data, 'inflection_index', None)[0]:
             for k, i in enumerate(data.inflection_index):
@@ -3515,9 +3542,6 @@ def iup_reg_model(data, proxies, ini):
 
         # Calculation of the trends and uncertainties for each cell
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index] = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
-        # print('V1 - ', trenda_z[it.multi_index])
-        # trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa = calc_trend_v3(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
-        # print('V3 - ', trenda_z[it.multi_index])
 
         # Save X, beta and betaa
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean

@@ -1685,8 +1685,8 @@ class AppWindow(QtWidgets.QMainWindow):
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.model_canvas.axes_list):
-            if X_og.shape != X.shape and not self.anomaly_check.isChecked():
-                    ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
+            # if X_og.shape != X.shape and not self.anomaly_check.isChecked():
+            ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
@@ -3170,7 +3170,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
     groups = get_string_groups(X_string)
-    # trend_index = trend_string_index[0]     # To get the first trend index so that the autoregression works
     try:
         beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
     except:
@@ -3256,10 +3255,10 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     Xmask2ok = Xmask2[0:k, :]
 
     mult = 1
-    if ini.get('o3_var_anom', 'False') == 'True':
-        mult *= 1
-    else:
-        mult *= 100 / np.nanmean(data_arr)
+    # if ini.get('anomaly', '') == 'True':
+    #     mult *= 1
+    # else:
+    #     mult *= 100 / np.nanmean(data_arr)
     if ini.get('averaging_window', None):
         mult *= 10
     else:
@@ -3275,38 +3274,78 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
             trenda_z = []
             siga_z = []
             covbetaa_z = []
-            if ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'rel':
-                trenda_z.append(np.nanmean(betaa[trend_string_index]) * 120 * 100)
-                print('ERROR HERE PROBABLY')
-                siga_z.append(np.abs(np.nanmean(betaa[trend_string_index]) / np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index]))))
-                covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[trend_string_index])) * 120 * 100)
-            elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'abs') == 'rel':
-                print('NOT YET FINISHED')
-                print(chr(sum(range(ord(min(str(not ())))))))
-            else:
-                count = 1
-                for keys, indices in groups.items():
-                    if keys[0] == 'intercept' or keys[0] == 'proxy':
-                        continue
-                    if keys[1] == 'month-of-the-year':
-                        while keys[-1] > count:
-                            trenda_z.append(np.nan)
-                            siga_z.append(np.nan)
-                            covbetaa_z.append(np.nan)
-                            count += 1
-                        trenda_z.append(np.nanmean(betaa[indices]) * mult)
-                        # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
-                        siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
-                        covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
-                    else:
-                        while keys[-1] > count:
-                            trenda_z.append(np.nan)
-                            siga_z.append(np.nan)
-                            count += 1
-                        trenda_z.append(betaa[indices[0]] * mult)
-                        siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
-                        covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
-                    count += 1
+
+            count = 1
+            for keys, indices in groups.items():
+                if keys[0] == 'intercept' or keys[0] == 'proxy':
+                    continue
+                if keys[1] == 'month-of-the-year':
+                    while keys[-1] > count:
+                        trenda_z.append(np.nan)
+                        siga_z.append(np.nan)
+                        covbetaa_z.append(np.nan)
+                        count += 1
+                    trenda_z.append(np.nanmean(betaa[indices]) * mult)
+                    # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                    siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
+                    covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
+                else:
+                    while keys[-1] > count:
+                        trenda_z.append(np.nan)
+                        siga_z.append(np.nan)
+                        count += 1
+                    trenda_z.append(betaa[indices[0]] * mult)
+                    siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                    covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
+                count += 1
+            # if ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'rel':
+            #     print('NOT YET FINISHED')
+            #     print(chr(sum(range(ord(min(str(not ())))))))
+            #     # idx = trend_string_index
+            #     # beta_trend = betaa[idx]
+            #     # cov_trend = covbetaa[np.ix_(idx, idx)]
+            #     #
+            #     # n = len(beta_trend)
+            #     # mean_beta = np.nanmean(beta_trend)
+            #     #
+            #     # var_mean = np.nansum(cov_trend) / (n ** 2)
+            #     # se_mean = np.sqrt(var_mean)
+            #     #
+            #     # scale = 120  # already percent
+            #     #
+            #     # trenda_z.append(mean_beta * scale)
+            #     # covbetaa_z.append(se_mean * scale)
+            #     # siga_z.append(np.abs(mean_beta / se_mean))
+            #     # trenda_z.append(betaa[indices[0]] * mult)
+            #     # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+            #     # covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
+            # elif ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'abs':
+            #     print('NOT YET FINISHED')
+            #     print(chr(sum(range(ord(min(str(not ())))))))
+            # else:
+            #     count = 1
+            #     for keys, indices in groups.items():
+            #         if keys[0] == 'intercept' or keys[0] == 'proxy':
+            #             continue
+            #         if keys[1] == 'month-of-the-year':
+            #             while keys[-1] > count:
+            #                 trenda_z.append(np.nan)
+            #                 siga_z.append(np.nan)
+            #                 covbetaa_z.append(np.nan)
+            #                 count += 1
+            #             trenda_z.append(np.nanmean(betaa[indices]) * mult)
+            #             # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+            #             siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
+            #             covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
+            #         else:
+            #             while keys[-1] > count:
+            #                 trenda_z.append(np.nan)
+            #                 siga_z.append(np.nan)
+            #                 count += 1
+            #             trenda_z.append(betaa[indices[0]] * mult)
+            #             siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+            #             covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
+            #         count += 1
                 # siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
                 # trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
 
@@ -3439,38 +3478,39 @@ def iup_reg_model(data, proxies, ini):
     while not it.finished:
         print(str(it.multi_index) + ': calculating trend')
         data_arr = data.o3[(slice(None),) + it.multi_index]
+        # print(data_arr)
         data_arr = filter_time_series(data_arr, data, monthly=True, min_window_years=5, min_valid_fraction=0.5, check_yearly_validity=True)
-        if check == 0 and anom_check == 'True':
-            for k in range(12):
-                if ini.get('anomaly_method', 'rel') == 'abs':
-                    data_arr[time.month == k + 1] = data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
-                else:
-                    data_arr[time.month == k + 1] = (data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))) / np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
-        elif check == 1:
-            for k, i in enumerate(np.unique(time.year)):
-                if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / len(np.where(time.year == i)[0]) <= float(ini.get('skip_percentage', 0.75)):
-                    data_arr[k] = np.nan
-                    continue
-                data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)])
-            data_arr = data_arr[:len(np.unique(time.year))]
-            if anom_check == 'True':
-                if ini.get('anomaly_method', 'rel') == 'abs':
-                    data_arr = data_arr - np.nanmean(data_arr)
-                else:
-                    data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
-        elif check == 2:
-            for k, i in enumerate(np.unique(time.year)):
-                time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
-                if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
-                    data_arr[k] = np.nan
-                    continue
-                data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
-            data_arr = data_arr[:len(np.unique(time.year))]
-            if anom_check == 'True':
-                if ini.get('anomaly_method', 'rel') == 'abs':
-                    data_arr = data_arr - np.nanmean(data_arr)
-                else:
-                    data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
+        # if check == 0 and anom_check == 'True':
+        #     for k in range(12):
+        #         if ini.get('anomaly_method', 'rel') == 'abs':
+        #             data_arr[time.month == k + 1] = data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
+        #         else:
+        #             data_arr[time.month == k + 1] = (data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))) / np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
+        # elif check == 1:
+        #     for k, i in enumerate(np.unique(time.year)):
+        #         if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / len(np.where(time.year == i)[0]) <= float(ini.get('skip_percentage', 0.75)):
+        #             data_arr[k] = np.nan
+        #             continue
+        #         data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)])
+        #     data_arr = data_arr[:len(np.unique(time.year))]
+        #     if anom_check == 'True':
+        #         if ini.get('anomaly_method', 'rel') == 'abs':
+        #             data_arr = data_arr - np.nanmean(data_arr)
+        #         else:
+        #             data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
+        # elif check == 2:
+        #     for k, i in enumerate(np.unique(time.year)):
+        #         time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
+        #         if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
+        #             data_arr[k] = np.nan
+        #             continue
+        #         data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
+        #     data_arr = data_arr[:len(np.unique(time.year))]
+        #     if anom_check == 'True':
+        #         if ini.get('anomaly_method', 'rel') == 'abs':
+        #             data_arr = data_arr - np.nanmean(data_arr)
+        #         else:
+        #             data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
 
         nanmask = ~np.isnan(data_arr.filled(np.nan))
         mask_time = np.where(nanmask == True)[0]

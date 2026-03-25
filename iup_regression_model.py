@@ -25,7 +25,7 @@ from statsmodels.stats.stattools import durbin_watson
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
-from PyQt5.QtCore import pyqtSignal, QTimer
+from PyQt5.QtCore import pyqtSignal, QTimer, Qt
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 # from regression_model_ui import Ui_MainWindow
 
@@ -584,6 +584,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.radio_abs.toggled.connect(self.anomaly_method_toggle)
         self.preset_combo.currentIndexChanged.connect(self.change_preset)
         self.data_list.currentItemChanged.connect(self.data_change)
+        self.data_list.itemChanged.connect(self.data_name_change)
         self.inflection_boxes = []
         self.update_inflection_boxes(1)
 
@@ -1028,12 +1029,19 @@ class AppWindow(QtWidgets.QMainWindow):
     def reload_data_list(self):
         self.data_list.clear()
         for i in self.list_of_data:
-            self.data_list.addItem(i.name)
+            item = QtWidgets.QListWidgetItem(i.name)
+            item.setFlags(item.flags() | Qt.ItemIsEditable)
+            self.data_list.addItem(item)
 
         # Select last item
         self.data_list.setCurrentItem(self.data_list.item(self.data_list.count() - 1))
 
         self.add_data_dia()
+
+    def data_name_change(self, item):
+        new_name = item.text()
+        index = self.data_list.row(item)
+        self.list_of_data[index].name = new_name
 
     def define_palettes(self):
         # Set palette

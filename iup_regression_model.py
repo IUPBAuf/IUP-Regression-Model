@@ -594,6 +594,8 @@ class AppWindow(QtWidgets.QMainWindow):
         self.dim_data_boxes = []
         self.dia_data_combo.currentIndexChanged.connect(self.populate_data_dim_widget)
         self.add_data_dia()
+        self.dia_data_table.itemChanged.connect(self.dia_data_change)
+        self.data_dim_reset.clicked.connect(self.data_dim_reset_dataset)
         self.dim_X_layout = self.X_dim_widget.layout()
         self.dim_X_boxes = []
 
@@ -859,6 +861,42 @@ class AppWindow(QtWidgets.QMainWindow):
             self.dim_data_layout.addLayout(col_layout)
         self.data_diagnostic()
         # data = self.list_of_data[self.data_list.currentRow()]
+
+    def dia_data_change(self, item):
+        row = item.row()
+        text = item.text().strip()
+        data_index = self.dia_data_combo.currentIndex()
+        dataset = self.list_of_data[data_index]
+        indices = [combo.currentIndex() for combo in self.dim_data_boxes]
+        idx = (row, *indices)
+
+        # Leeres Feld => Mask
+        if text == '':
+            dataset.o3.mask[idx] = True
+            item.setText('')  # optional visuell leer lassen
+            item.setBackground(QColor(255, 150, 150))
+            return
+        # NaN
+        if text.lower() == 'nan':
+            dataset.o3[idx] = np.nan
+            dataset.o3.mask[idx] = False
+            item.setBackground(QColor(255, 150, 150))
+            return
+        # Normale Werte
+        try:
+            value = float(text)
+            dataset.o3[idx] = value
+            dataset.o3.mask[idx] = False
+            item.setBackground(QColor(255, 150, 150))
+        except ValueError:
+            print(f'Ungültiger Wert: {text}')
+
+    def data_dim_reset_dataset(self):
+        data_index = self.dia_data_combo.currentIndex()
+        dataset = self.list_of_data[data_index]
+        dataset.o3 = dataset.o3_og.copy()
+
+        self.data_diagnostic()
 
     def proxy_diagnostic(self, index):
         start_date = str(np.array(self.proxies[index].time)[0])
@@ -1579,17 +1617,42 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def data_diagnostic(self):
         indices = [combo.currentIndex() for combo in self.dim_data_boxes]
-        matrix = self.list_of_data[self.dia_data_combo.currentIndex()].o3[(slice(None), *indices)]
-        date = self.list_of_data[self.dia_data_combo.currentIndex()].time
+
+        data_index = self.dia_data_combo.currentIndex()
+        dataset = self.list_of_data[data_index]
+
+        matrix = dataset.o3[(slice(None), *indices)]
+        matrix_orig = dataset.o3_og[(slice(None), *indices)]
+
+        date = dataset.time
 
         # Fill Table
+        self.dia_data_table.blockSignals(True)
         self.dia_data_table.setColumnCount(1)
         self.dia_data_table.setRowCount(len(date))
 
         self.dia_data_table.setVerticalHeaderLabels(date.astype(str))
 
         for k in range(len(date)):
-            self.dia_data_table.setItem(k, 0, QTableWidgetItem(str(matrix[k])))
+            val = matrix[k]
+            orig_val = matrix_orig[k]
+
+            item = QTableWidgetItem(str(val))
+
+            changed = False
+            if np.ma.is_masked(val) != np.ma.is_masked(orig_val):
+                changed = True
+            elif not np.ma.is_masked(val):
+                if not np.isclose(val, orig_val, equal_nan=True):
+                    changed = True
+            if changed:
+                item.setBackground(QColor(255, 150, 150))
+            else:
+                item.setBackground(QColor(255, 255, 255))
+
+            self.dia_data_table.setItem(k, 0, item)
+
+        self.dia_data_table.blockSignals(False)
 
         # Fill information
         self.dia_data_start.setText(str(np.nanmin(date)))
@@ -2896,6 +2959,7 @@ def load_netCDF(filename, ini):
         new_order = [int(ini.get('time_dim', 1)) - 1] + [i for i in range(len(dependencies)) if i != int(ini.get('time_dim', 1)) - 1]
         data.o3 = np.transpose(data.o3, axes=new_order)
         data.o3 = np.ma.masked_invalid(data.o3)
+        data.o3_og = data.o3.copy()
         data.dim_array = [dependencies[i] for i in new_order]
         data.time = convert_to_datetime(data.time, ini)
         data.time_format = ini.get('time_format', '%Y%m')

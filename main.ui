@@ -657,6 +657,13 @@
                 <widget class="QWidget" name="widget_21" native="true">
                  <layout class="QHBoxLayout" name="horizontalLayout_8">
                   <item>
+                   <widget class="QPushButton" name="data_dim_reset">
+                    <property name="text">
+                     <string>Reset Data</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
                    <spacer name="horizontalSpacer_4">
                     <property name="orientation">
                      <enum>Qt::Horizontal</enum>

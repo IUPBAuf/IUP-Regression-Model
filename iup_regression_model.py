@@ -152,7 +152,6 @@ class VariableWindow(QtWidgets.QDialog):
         self.bttn_ok.clicked.connect(self.save_settings)
         self.bttn_cancel.clicked.connect(self.close)
 
-
     def show_options(self):
         current_index = self.variable_widget.currentIndex()
         if current_index == 0:
@@ -305,7 +304,7 @@ class VariableWindow(QtWidgets.QDialog):
             if line_text == 'time':
                 self.ini['time_var'] = combo_text
                 self.ini['time_dim'] = i + 1
-                self.ini['time_format'] = self.dim_layout.itemAt(i).widget().layout().itemAt(2).widget().layout().itemAt(2).widget().text()
+                self.ini['time_format'] = self.dim_layout.itemAt(i).widget().layout().itemAt(3).widget().layout().itemAt(2).widget().text()
             else:
                 self.ini['additional_var_' + str(i + 1) + '_index'] = combo_text
                 self.ini['additional_var_' + str(i + 1) + '_tag'] = line_text
@@ -976,7 +975,9 @@ class AppWindow(QtWidgets.QMainWindow):
         else:
             return
 
-        self.open_data_settings_dialog(fileName)
+        accepted = self.open_data_settings_dialog(fileName)
+        if not accepted:
+            return
 
         for i in fileName:
             data = load_netCDF(i, self.ini)
@@ -1012,7 +1013,8 @@ class AppWindow(QtWidgets.QMainWindow):
         var_window = VariableWindow(self.ini, filename)
         var_window.ini_signal.connect(self.update_ini_settings)
         var_window.setWindowTitle('Variable Settings')
-        var_window.exec_()
+        result = var_window.exec_()
+        return result == QtWidgets.QDialog.Accepted
 
     def open_proxy_settings_dialog(self, filename):
         proxy_window = ProxyWindow(self.ini, filename)
@@ -1614,10 +1616,10 @@ class AppWindow(QtWidgets.QMainWindow):
             Y_uncert = [Y_uncert]
 
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
-        # common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X, return_indices=True)
-        # residuals = Y[idx_Y] - Y_model[idx_Y_model]
-        # rms = np.sqrt(np.nanmean(residuals ** 2))
-        # r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y - np.nanmean(Y)) ** 2))
+        common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X, return_indices=True)
+        residuals = Y[idx_Y] - Y_model[idx_Y_model]
+        rms = np.sqrt(np.nanmean(residuals ** 2))
+        r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y - np.nanmean(Y)) ** 2))
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
@@ -1645,8 +1647,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 subtitles.append(f"between {inflection_dates[i]} and {inflection_dates[i + 1]}")
             subtitles.append(f"after {inflection_dates[-1]}")
 
-        trend_lines = [f'trend {subtitles[k]}: {v:.2f} ± {Y_uncert[k] * 2:.2f}%/decade' for k, v in enumerate(Y_trend)]
-        # trend_lines.append(f'   r² = {r2:.2f}, RMS = {rms:.2f} {self.current_ini.get("o3_var_unit", "")}')
+        trend_lines = [f'trend {subtitles[k]}: {v:.2f} ± {Y_uncert[k] * 2:.2f} %/decade' for k, v in enumerate(Y_trend)]
+        trend_lines.append(f'   r² = {r2:.2f}, RMS = {rms:.2f} {self.current_ini.get("o3_var_unit", "")}')
         trend_string = '\n'.join(trend_lines)
 
         Y_slope = np.array(slope_X).T @ np.array(slope_beta)
@@ -1655,10 +1657,15 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # inflection_methods = [str(m).strip().lower() for m in self.current_ini.get('inflection_method', '')]
         if self.current_ini.get('inflection_point', None):
-            inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m') for d in self.current_ini.get('inflection_point').split(',')]
+            inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m').date() for d in self.current_ini.get('inflection_point').split(',')]
             for k, inflection_point in enumerate(sorted(inflection_points)):
                 # Find index where time >= inflection point
-                breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
+                # breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
+                times = np.array(self.time[valid_rows])
+                idx = np.where(times >= inflection_point)[0]
+                if idx.size == 0:
+                    continue
+                breakpoint_index = idx[0]
 
                 # Insert NaN into both X_slope and Y_slope at the breakpoint
                 X_slope = np.insert(X_slope, breakpoint_index + k, X_slope[breakpoint_index + k])
@@ -2385,9 +2392,7 @@ def set_data_limits(data, ini):
                 limits = int(ini.get('additional_var_' + str(k + 1) + '_limit', None))
                 slices.append(slice(limits, limits + 1))
                 setattr(data, dim, [getattr(data, dim)[limits]])
-    print(data.o3.shape)
     data.o3 = data.o3[tuple(slices)]
-    print(data.o3.shape)
     return data
 
 
@@ -2397,7 +2402,10 @@ def convert_to_datetime(time, ini=None):
     try:
         format = ini.get('time_format', None)
         if format:
-            if np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
+            if 'days since' in format.lower() or format.lower().startswith('ds'):
+                match = re.match(r'(ds|days since)\s+(\d{4}-\d{2}-\d{2})', format.lower().strip())
+                time = np.array([(dt.datetime.strptime(match.group(2), '%Y-%m-%d') + dt.timedelta(days=float(t))).date() for t in time])
+            elif np.issubdtype(time.dtype, 'O') or np.issubdtype(time.dtype, str):
                 time = np.array([dt.datetime.strptime(str(x), format).date() for x in time])
             elif (time.astype(int) == time).all():
                 time = np.array([dt.datetime.strptime(str(int(x)), format).date() for x in time])
@@ -2550,6 +2558,82 @@ def filter_time_series(data_arr, data, monthly=True, min_window_years=2, min_val
         filtered_arr[seg_start:seg_end] = seg_filtered
 
     return filtered_arr
+
+
+def filter_by_time_coverage(data_arr, data, min_fraction=0.7, min_internal_fraction=0.5):
+    arr = data_arr.filled(np.nan).copy()
+    n = len(arr)
+
+    inf_idx = list(getattr(data, 'inflection_index', []) or [])
+    inf_idx = sorted([int(i) for i in inf_idx])
+
+    bounds = [0] + inf_idx + [n]
+
+    for seg in range(len(bounds) - 1):
+        start, end = bounds[seg], bounds[seg + 1]
+
+        segment = arr[start:end]
+        valid_mask = ~np.isnan(segment)
+
+        if np.sum(valid_mask) == 0:
+            print(f'Segment {seg}: no valid data → set to NaN')
+            arr[start:end] = np.nan
+            continue
+
+        valid_indices = np.where(valid_mask)[0]
+
+        first_idx = valid_indices[0]
+        last_idx = valid_indices[-1]
+
+        segment_length = end - start
+        covered_length = last_idx - first_idx + 1
+
+        coverage = covered_length / segment_length
+
+        internal_valid = np.sum(valid_mask[first_idx:last_idx + 1])
+        internal_fraction = internal_valid / covered_length
+
+        if coverage < float(min_fraction):
+            print(f'Segment {seg}: coverage too small ({coverage:.2f}) → set to NaN')
+            arr[start:end] = np.nan
+            continue
+
+        if internal_fraction < float(min_internal_fraction):
+            print(f'Segment {seg}: internal fraction too small ({internal_fraction:.2f}) → set to NaN')
+            arr[start:end] = np.nan
+            continue
+
+    return np.ma.masked_invalid(arr)
+
+
+def filter_by_time_density_coverage(data_arr, data, min_fraction=0.7):
+    arr = data_arr.filled(np.nan).copy()
+    n = len(arr)
+
+    # Segment boundaries
+    inf_idx = sorted([int(i) for i in getattr(data, 'inflection_index', []) or []])
+    bounds = [0] + inf_idx + [n]
+
+    for seg in range(len(bounds) - 1):
+        start, end = bounds[seg], bounds[seg + 1]
+        segment = arr[start:end]
+
+        valid_indices = np.where(~np.isnan(segment))[0]
+        if len(valid_indices) == 0:
+            print(f'Segment {seg}: no valid data → set to NaN')
+            arr[start:end] = np.nan
+            continue
+
+        first_idx, last_idx = valid_indices[0], valid_indices[-1]
+        segment_length = end - start
+        print(segment_length)
+        print(first_idx, last_idx)
+        # Prüfen, ob der Anfang oder das Ende des Segments zu groß ist
+        if first_idx / segment_length > (1 - float(min_fraction)) or (segment_length - last_idx - 1) / segment_length > (1 - float(min_fraction)):
+            print(f'Segment {seg}: coverage too small → set to NaN')
+            arr[start:end] = np.nan
+
+    return np.ma.masked_invalid(arr)
 
 
 def get_string_groups(string_list):
@@ -3079,12 +3163,12 @@ def get_X_1(nanmask, ini, X_1_string, data):
                 col += 1
 
     X_1[~nanmask, :] = np.nan
-
     return X_1
 
 
-def get_X_2(proxies, nanmask, X_proxy_size, it, data):
-    mask_time = np.where(nanmask == True)[0]    # Array which has every index of actual values of the original data
+def get_X_2(proxies, nanmask, gap_mask, X_proxy_size, it, data):
+    proxy_mask = nanmask | gap_mask
+    mask_time = np.where(proxy_mask)[0]
     X_2 = np.zeros((len(nanmask), X_proxy_size), dtype=float)  # Size of the proxy part of the X matrices depends on which method to use for each proxy as well as the seasonal cycle
     X_2[:] = np.nan
 
@@ -3115,35 +3199,35 @@ def get_X_2(proxies, nanmask, X_proxy_size, it, data):
                     tag = i.tag     # Proxy tag
                     tag_val = getattr(data, ii)[it.multi_index[kk]]
             if tag_val in getattr(i, tag):
-                proxy_data = i.data[nanmask, np.where(getattr(i, tag) == tag_val)]
+                proxy_data = i.data[proxy_mask, np.where(getattr(i, tag) == tag_val)]
             else:
                 closest_val = sorted([(val_close, abs(val_close - tag_val)) for val_close in getattr(i, tag)], key=lambda x: x[1:])[:2]
                 val1, val2 = closest_val[0][0], closest_val[1][0]
-                data1, data2 = i.data[nanmask, np.where(getattr(i, tag) == val1)[0][0]], i.data[nanmask, np.where(getattr(i, tag) == val2)[0][0]]
+                data1, data2 = i.data[proxy_mask, np.where(getattr(i, tag) == val1)[0][0]], i.data[proxy_mask, np.where(getattr(i, tag) == val2)[0][0]]
                 temp_data = np.empty(len(data1))
                 for kk, ii in enumerate(data1):
                     temp_data[kk] = np.interp(tag_val, [val1, val2], [data1[kk], data2[kk]])
                 proxy_data = temp_data
         else:
-            proxy_data = i.data[nanmask]
+            proxy_data = i.data[proxy_mask]
 
         if i.method == 0:
             continue
         elif i.method == 1:
-            X_2[nanmask, col] = proxy_data
+            X_2[proxy_mask, col] = proxy_data
             col += 1
         elif i.method == 2:
-            X_2[nanmask, col] = proxy_data
+            X_2[proxy_mask, col] = proxy_data
             col += 1
             for kk in range(int(i.seas_comp)):
-                X_2[nanmask, col] = proxy_data * np.sin(((kk + 1) * 2 * np.pi * mask_time)/12)
+                X_2[proxy_mask, col] = proxy_data * np.sin(((kk + 1) * 2 * np.pi * mask_time)/12)
                 col += 1
-                X_2[nanmask, col] = proxy_data * np.cos(((kk + 1) * 2 * np.pi * mask_time)/12)
+                X_2[proxy_mask, col] = proxy_data * np.cos(((kk + 1) * 2 * np.pi * mask_time)/12)
                 col += 1
         elif i.method == 3:
             month_array = np.array(pd.to_datetime(data.time[data.date_start:data.date_end]).month)
             for kk in range(12):
-                X_2[nanmask, col] = proxy_data
+                X_2[proxy_mask, col] = proxy_data
                 X_2[np.where((month_array % 13) != kk+1), col] = 0
                 col += 1
 
@@ -3255,10 +3339,10 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     Xmask2ok = Xmask2[0:k, :]
 
     mult = 1
-    # if ini.get('anomaly', '') == 'True':
-    #     mult *= 1
-    # else:
-    #     mult *= 100 / np.nanmean(data_arr)
+    if ini.get('anomaly', '') == 'True':
+        mult *= 1
+    else:
+        mult *= 100 / np.nanmean(data_arr)
     if ini.get('averaging_window', None):
         mult *= 10
     else:
@@ -3476,10 +3560,26 @@ def iup_reg_model(data, proxies, ini):
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
     while not it.finished:
-        print(str(it.multi_index) + ': calculating trend')
-        data_arr = data.o3[(slice(None),) + it.multi_index]
-        # print(data_arr)
-        data_arr = filter_time_series(data_arr, data, monthly=True, min_window_years=5, min_valid_fraction=0.5, check_yearly_validity=True)
+        # print(str(it.multi_index) + ': calculating trend')
+        dim_names = data.dim_array[1:]  # ohne time-Dimension
+        coord_strings = []
+        for dim_name, idx in zip(dim_names, it.multi_index):
+            coord_values = getattr(data, dim_name)  # z.B. data.lat
+            coord_val = coord_values[idx]
+            if dim_name == 'lat':
+                coord_strings.append(f'Latitude {coord_val:.1f}°')
+            elif dim_name == 'lon':
+                coord_strings.append(f'Longitude {coord_val:.1f}°')
+            elif dim_name == 'alt':
+                coord_strings.append(f'Altitude {coord_val:.1f}')
+            else:
+                coord_strings.append(f'{dim_name} {coord_val}')
+        print(f"{it.multi_index}: calculating trend ({', '.join(coord_strings)})")
+
+        data_arr = np.ma.masked_invalid(data.o3[(slice(None),) + it.multi_index])
+        # data_arr = filter_time_series(data_arr, data, monthly=True, min_window_years=3, min_valid_fraction=0.5, check_yearly_validity=True)
+        data_arr = filter_by_time_coverage(data_arr, data, min_fraction=ini.get('fill_fraction', 0.70), min_internal_fraction=ini.get('skip_percentage', 0.50))
+
         # if check == 0 and anom_check == 'True':
         #     for k in range(12):
         #         if ini.get('anomaly_method', 'rel') == 'abs':
@@ -3513,6 +3613,17 @@ def iup_reg_model(data, proxies, ini):
         #             data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
 
         nanmask = ~np.isnan(data_arr.filled(np.nan))
+        gap_mask = np.zeros_like(nanmask, dtype=bool)
+        if 'inflection_method' in ini and 'gap' in ini['inflection_method']:
+            methods = ini['inflection_method']
+            inf_idx = list(data.inflection_index)
+
+            bounds = [0] + inf_idx + [len(nanmask)]
+
+            for seg, method in enumerate(methods):
+                if method == 'gap':
+                    start, end = bounds[seg], bounds[seg + 1]
+                    gap_mask[start:end] = True
         mask_time = np.where(nanmask == True)[0]
 
         # inf_idx = list(getattr(data, 'inflection_index', []) or [])  # Build segment boundaries from inflection indices
@@ -3529,12 +3640,12 @@ def iup_reg_model(data, proxies, ini):
         #         data_arr[start:end] = np.nan
         #         nanmask[start:end] = False
         # Inquery if there are enough datapoints to even calculate a trend
-        if len(mask_time) / len(nanmask) < float(ini.get('skip_percentage', 0.75)):
-            print('Not enough values to compute the trend! ' + f'{len(mask_time) / len(nanmask)*100:.2f}' + '% of data available.')
-            it.iternext()
-            continue
+        # if len(mask_time) / len(nanmask) < float(ini.get('skip_percentage', 0.75)):
+        #     print('Not enough values to compute the trend! ' + f'{len(mask_time) / len(nanmask)*100:.2f}' + '% of data available.')
+        #     it.iternext()
+        #     continue
         X_1 = get_X_1(nanmask, ini, X_1_string, data)
-        X_2 = get_X_2(proxies, nanmask, X_proxy_size, it, data)
+        X_2 = get_X_2(proxies, nanmask, gap_mask, X_proxy_size, it, data)
 
         X = np.concatenate([X_1, X_2], axis=1)
         X[:, np.all(X[nanmask] == 0, axis=0)] = np.nan

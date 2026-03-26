@@ -590,6 +590,8 @@ class AppWindow(QtWidgets.QMainWindow):
 
         # Diagnostic UI functions
         self.dia_proxy_combo.currentIndexChanged.connect(self.proxy_diagnostic)
+        self.dia_proxy_table.itemChanged.connect(self.dia_proxy_change)
+        self.proxy_dim_reset.clicked.connect(self.proxy_reset_dataset)
         self.dim_data_layout = self.data_dim_widget.layout()
         self.dim_data_boxes = []
         self.dia_data_combo.currentIndexChanged.connect(self.populate_data_dim_widget)
@@ -611,7 +613,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.model_layout.addWidget(self.model_canvas)
         self.model_toolbar = NavigationToolbar(self.model_canvas, self.model_fig_widget)
         self.model_layout.addWidget(self.model_toolbar)
-
 
         # Plotting Contour
         self.dim_con_layout = self.dim_con_widget.layout()
@@ -835,96 +836,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 canvas.figure.set_size_inches(original_size)
                 canvas.figure.axes[0].set_title(original_title)
                 self.model_canvas.figure.tight_layout()
-
-    def add_data_dia(self):
-        self.dia_data_combo.clear()
-        for i in self.list_of_data:
-            self.dia_data_combo.addItem(i.name)
-
-    def populate_data_dim_widget(self):
-        self.clear_dim_widgets(self.dim_data_layout)
-        self.dim_data_boxes.clear()
-
-        for dim_index in range(1, len(self.list_of_data[self.dia_data_combo.currentIndex()].o3.shape)):
-            col_layout = QVBoxLayout()
-            label = QtWidgets.QLabel(self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
-            col_layout.addWidget(label)
-
-            combo = QtWidgets.QComboBox()
-            values = getattr(self.list_of_data[self.dia_data_combo.currentIndex()], self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
-            combo.addItems([str(value) for value in values])
-            col_layout.addWidget(combo)
-            combo.currentIndexChanged.connect(self.data_diagnostic)
-
-            self.dim_data_boxes.append(combo)
-
-            self.dim_data_layout.addLayout(col_layout)
-        self.data_diagnostic()
-        # data = self.list_of_data[self.data_list.currentRow()]
-
-    def dia_data_change(self, item):
-        row = item.row()
-        text = item.text().strip()
-        data_index = self.dia_data_combo.currentIndex()
-        dataset = self.list_of_data[data_index]
-        indices = [combo.currentIndex() for combo in self.dim_data_boxes]
-        idx = (row, *indices)
-
-        # Leeres Feld => Mask
-        if text == '':
-            dataset.o3.mask[idx] = True
-            item.setText('')  # optional visuell leer lassen
-            item.setBackground(QColor(255, 150, 150))
-            return
-        # NaN
-        if text.lower() == 'nan':
-            dataset.o3[idx] = np.nan
-            dataset.o3.mask[idx] = False
-            item.setBackground(QColor(255, 150, 150))
-            return
-        # Normale Werte
-        try:
-            value = float(text)
-            dataset.o3[idx] = value
-            dataset.o3.mask[idx] = False
-            item.setBackground(QColor(255, 150, 150))
-        except ValueError:
-            print(f'Ungültiger Wert: {text}')
-
-    def data_dim_reset_dataset(self):
-        data_index = self.dia_data_combo.currentIndex()
-        dataset = self.list_of_data[data_index]
-        dataset.o3 = dataset.o3_og.copy()
-
-        self.data_diagnostic()
-
-    def proxy_diagnostic(self, index):
-        start_date = str(np.array(self.proxies[index].time)[0])
-        end_date = str(np.array(self.proxies[index].time)[-1])
-        self.dia_proxy_start.setText(start_date)
-        self.dia_proxy_end.setText(end_date)
-        dim_str = ' '.join(map(str, self.proxies[index].data.shape))
-        self.dia_proxy.setText(dim_str)
-
-        # Fill Table
-        if len(self.proxies[index].data.shape) >= 2:
-            sec_dim = self.proxies[index].data.shape[1]
-            self.dia_proxy_table.setColumnCount(sec_dim)
-            self.dia_proxy_table.setHorizontalHeaderLabels(getattr(self.proxies[index], self.proxies[index].tag).astype(str))
-        else:
-            sec_dim = 1
-            self.dia_proxy_table.setColumnCount(sec_dim)
-        self.dia_proxy_table.setRowCount(self.proxies[index].data.shape[0])
-
-        self.dia_proxy_table.setVerticalHeaderLabels(self.proxies[index].time.astype(str))
-
-
-        for k, i in enumerate(self.proxies[index].data):
-            if sec_dim == 1:
-                self.dia_proxy_table.setItem(k, 0, QTableWidgetItem(str(self.proxies[index].data[k])))
-            else:
-                for kk in range(sec_dim):
-                    self.dia_proxy_table.setItem(k, kk, QTableWidgetItem(str(self.proxies[index].data[k, kk])))
 
     def update_trend_table(self):
         # Update of the frozen table
@@ -1646,7 +1557,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 if not np.isclose(val, orig_val, equal_nan=True):
                     changed = True
             if changed:
-                item.setBackground(QColor(255, 150, 150))
+                item.setBackground(QColor(255, 220, 220))
             else:
                 item.setBackground(QColor(255, 255, 255))
 
@@ -1659,6 +1570,180 @@ class AppWindow(QtWidgets.QMainWindow):
         self.dia_data_end.setText(str(np.nanmax(date)))
         self.dia_data_time.setText(str(len(date)))
         self.dia_data_nan.setText(str(np.sum(np.isnan(matrix.filled(np.nan)))))
+
+    def add_data_dia(self):
+        self.dia_data_combo.clear()
+        for i in self.list_of_data:
+            self.dia_data_combo.addItem(i.name)
+
+    def populate_data_dim_widget(self):
+        self.clear_dim_widgets(self.dim_data_layout)
+        self.dim_data_boxes.clear()
+
+        for dim_index in range(1, len(self.list_of_data[self.dia_data_combo.currentIndex()].o3.shape)):
+            col_layout = QVBoxLayout()
+            label = QtWidgets.QLabel(self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
+            col_layout.addWidget(label)
+
+            combo = QtWidgets.QComboBox()
+            values = getattr(self.list_of_data[self.dia_data_combo.currentIndex()], self.list_of_data[self.dia_data_combo.currentIndex()].dim_array[dim_index])
+            combo.addItems([str(value) for value in values])
+            col_layout.addWidget(combo)
+            combo.currentIndexChanged.connect(self.data_diagnostic)
+
+            self.dim_data_boxes.append(combo)
+
+            self.dim_data_layout.addLayout(col_layout)
+        self.data_diagnostic()
+
+    def dia_data_change(self, item):
+        row = item.row()
+        text = item.text().strip()
+        data_index = self.dia_data_combo.currentIndex()
+        dataset = self.list_of_data[data_index]
+        indices = [combo.currentIndex() for combo in self.dim_data_boxes]
+        idx = (row, *indices)
+
+        if text == '':
+            dataset.o3.mask[idx] = True
+            item.setText('')  # optional visuell leer lassen
+            item.setBackground(QColor(255, 220, 220))
+            return
+
+        if text.lower() == 'nan':
+            dataset.o3[idx] = np.nan
+            dataset.o3.mask[idx] = False
+            item.setBackground(QColor(255, 220, 220))
+            return
+
+        try:
+            value = float(text)
+            dataset.o3[idx] = value
+            dataset.o3.mask[idx] = False
+            item.setBackground(QColor(255, 220, 220))
+        except ValueError:
+            orig_val = dataset.o3_og[idx]
+            print(f'Ungültiger Wert: {text}')
+            self.dia_data_table.blockSignals(True)
+            if np.ma.is_masked(orig_val):
+                dataset.o3.mask[idx] = True
+                item.setText('')
+            else:
+                dataset.o3[idx] = orig_val
+                dataset.o3.mask[idx] = False
+                item.setText(str(orig_val))
+            item.setBackground(QColor(255, 255, 255))
+            self.dia_data_table.blockSignals(False)
+
+    def data_dim_reset_dataset(self):
+        data_index = self.dia_data_combo.currentIndex()
+        dataset = self.list_of_data[data_index]
+        dataset.o3 = dataset.o3_og.copy()
+
+        self.data_diagnostic()
+
+    def proxy_diagnostic(self, index):
+        proxy = self.proxies[index]
+        start_date = str(np.array(proxy.time)[0])
+        end_date = str(np.array(proxy.time)[-1])
+        self.dia_proxy_start.setText(start_date)
+        self.dia_proxy_end.setText(end_date)
+
+        dim_str = ' '.join(map(str, proxy.data.shape))
+        self.dia_proxy.setText(dim_str)
+
+        data = proxy.data
+        data_orig = proxy.data_og
+
+        # Fill Table
+        self.dia_proxy_table.blockSignals(True)
+
+        if len(data.shape) >= 2:
+            sec_dim = data.shape[1]
+            self.dia_proxy_table.setColumnCount(sec_dim)
+            self.dia_proxy_table.setHorizontalHeaderLabels(getattr(proxy, proxy.tag).astype(str))
+        else:
+            sec_dim = 1
+            self.dia_proxy_table.setColumnCount(1)
+
+        self.dia_proxy_table.setRowCount(data.shape[0])
+        self.dia_proxy_table.setVerticalHeaderLabels(proxy.time.astype(str))
+
+        for k in range(data.shape[0]):
+            for kk in range(sec_dim):
+                val = data[k] if sec_dim == 1 else data[k, kk]
+                orig_val = data_orig[k] if sec_dim == 1 else data_orig[k, kk]
+                item = QTableWidgetItem(str(val))
+
+                changed = False
+
+                if np.ma.is_masked(val) != np.ma.is_masked(orig_val):
+                    changed = True
+
+                elif not np.ma.is_masked(val) and not np.ma.is_masked(orig_val):
+                    try:
+                        if not np.isclose(float(val), float(orig_val), equal_nan=True):
+                            changed = True
+                    except Exception:
+                        changed = True
+
+                if changed:
+                    item.setBackground(QColor(255, 220, 220))
+                self.dia_proxy_table.setItem(k, kk, item)
+
+        self.dia_proxy_table.blockSignals(False)
+
+    def dia_proxy_change(self, item):
+        row = item.row()
+        col = item.column()
+        text = item.text().strip()
+
+        proxy_index = self.dia_proxy_combo.currentIndex()
+        proxy = self.proxies[proxy_index]
+
+        if proxy.data.ndim == 1:
+            idx = (row,)
+        else:
+            idx = (row, col)
+
+        if text == '':
+            proxy.data.mask[idx] = True
+            item.setText('')
+            item.setBackground(QColor(255, 220, 220))
+            return
+
+        if text.lower() == 'nan':
+            proxy.data[idx] = np.nan
+            proxy.data.mask[idx] = False
+            item.setBackground(QColor(255, 220, 220))
+            return
+
+        try:
+            value = float(text)
+            proxy.data[idx] = value
+            proxy.data.mask[idx] = False
+            item.setBackground(QColor(255, 220, 220))
+        except ValueError:
+            orig_val = proxy.data_og[idx]
+            print(f'Ungültiger Wert: {text}')
+            self.dia_proxy_table.blockSignals(True)
+            if np.ma.is_masked(orig_val):
+                proxy.data.mask[idx] = True
+                item.setText('')
+            else:
+                proxy.data[idx] = orig_val
+                proxy.data.mask[idx] = False
+                item.setText(str(orig_val))
+            item.setBackground(QColor(255, 255, 255))
+            self.dia_proxy_table.blockSignals(False)
+
+    def proxy_reset_dataset(self):
+        proxy_index = self.dia_proxy_combo.currentIndex()
+        proxy = self.proxies[proxy_index]
+
+        proxy.data = proxy.data_og.copy()
+
+        self.proxy_diagnostic(proxy_index)
 
     def plot_model_figure(self):
         # Clear the figure
@@ -2811,6 +2896,10 @@ def load_default_proxies(ini):
         i.method = int(ini.get(proxy_method_str, ini.get('default_proxy_method', 2)))
         i.seas_comp = int(ini.get(proxy_seasonal_str, ini.get('default_seasonal_component', 2)))
         i.source = [ini['proxy_path'], int(2 + k)]
+        i.data = np.ma.array(i.data)
+        if i.data.mask is np.ma.nomask or isinstance(i.data.mask, np.bool_):
+            i.data.mask = np.zeros(i.data.shape, dtype=bool)
+        i.data_og = i.data.copy()
 
     return proxy_list
 
@@ -2891,6 +2980,10 @@ def load_add_proxy_file(ini, prox_num):
         new_order = [time_dim_index] + [i for i in range(proxy.data.ndim) if i != time_dim_index]
         proxy.data = np.transpose(proxy.data, axes=new_order)
     proxy.time = proxy.time.apply(lambda dt: dt.replace(day=15))
+    proxy.data = np.ma.array(proxy.data)
+    if proxy.data.mask is np.ma.nomask or isinstance(proxy.data.mask, np.bool_):
+        proxy.data.mask = np.zeros(proxy.data.shape, dtype=bool)
+    proxy.data_og = proxy.data.copy()
 
     return proxy
 

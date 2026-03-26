@@ -3542,6 +3542,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                     while keys[-1] > count:
                         trenda_z.append(np.nan)
                         siga_z.append(np.nan)
+                        covbetaa_z.append(np.nan)
                         count += 1
                     trenda_z.append(betaa[indices[0]] * mult)
                     siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
@@ -3597,12 +3598,12 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
             #         count += 1
                 # siga_z = np.abs(betaa[trend_string_index] / np.sqrt(np.diag(covbetaa)[trend_string_index])) if len(trend_string_index) == 1 else [np.abs(betaa[i] / np.sqrt(np.diag(covbetaa)[i])) for i in trend_string_index]
                 # trenda_z = betaa[trend_string_index] * mult if len(trend_string_index) == 1 else [betaa[i] * mult for i in trend_string_index]
-
     except:
         trenda_z = [np.nan] * len(trend_string_index)
         siga_z = [np.nan] * len(trend_string_index)
         covbetaa_z = [np.nan] * len(trend_string_index)
         print('Failed to calculate the trend and significants')
+
     if len(trenda_z) == 1:
         return trenda_z.pop(), siga_z.pop(), beta, betaa, covbetaa_z.pop()
     else:
@@ -3789,8 +3790,6 @@ def iup_reg_model(data, proxies, ini):
                 if method == 'gap':
                     start, end = bounds[seg], bounds[seg + 1]
                     gap_mask[start:end] = True
-        mask_time = np.where(nanmask == True)[0]
-
         # inf_idx = list(getattr(data, 'inflection_index', []) or [])  # Build segment boundaries from inflection indices
         # inf_idx = [int(i) for i in inf_idx]  # Guarantee integer indices and sorted order
         # inf_idx.sort()
@@ -3804,11 +3803,7 @@ def iup_reg_model(data, proxies, ini):
         #         start, end = bounds[j], bounds[j + 1]
         #         data_arr[start:end] = np.nan
         #         nanmask[start:end] = False
-        # Inquery if there are enough datapoints to even calculate a trend
-        # if len(mask_time) / len(nanmask) < float(ini.get('skip_percentage', 0.75)):
-        #     print('Not enough values to compute the trend! ' + f'{len(mask_time) / len(nanmask)*100:.2f}' + '% of data available.')
-        #     it.iternext()
-        #     continue
+
         X_1 = get_X_1(nanmask, ini, X_1_string, data)
         X_2 = get_X_2(proxies, nanmask, gap_mask, X_proxy_size, it, data)
 
@@ -3835,6 +3830,7 @@ def iup_reg_model(data, proxies, ini):
         X_clean[np.isnan(X_clean)] = 0
 
         # Calculation of the trends and uncertainties for each cell
+        a, b, c, d, e = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index] = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa

@@ -1780,7 +1780,7 @@ class AppWindow(QtWidgets.QMainWindow):
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
         for key, i in str_groups.items():
-            if key[0] == 'proxy' or key[-1] == None:
+            if key[0] == 'proxy':
                 continue
             else:
                 if key[1] == 'month-of-the-year':
@@ -1919,7 +1919,6 @@ class AppWindow(QtWidgets.QMainWindow):
 
         for idx in range(n_plots):
             ax = axes[idx]
-
             # select slice of trend and signi depending on subplot
             this_indices = plot_indices + (idx,) if n_plots > 1 else plot_indices
             if trends[this_indices].shape != (len(y_grid), len(x_grid)):
@@ -3419,6 +3418,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
     groups = get_string_groups(X_string)
+
     try:
         beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
     except:
@@ -3535,10 +3535,14 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                         covbetaa_z.append(np.nan)
                         count += 1
                     trenda_z.append(np.nanmean(betaa[indices]) * mult)
-                    # siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
                     siga_z.append(np.abs(np.nanmean(betaa[indices]) / np.nanmean(np.sqrt(np.diag(covbetaa)[indices]))))
                     covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
                 else:
+                    if keys[-1] is None:    # If no inflection point
+                        trenda_z.append(betaa[indices[0]] * mult)
+                        siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
+                        covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
+                        continue
                     while keys[-1] > count:
                         trenda_z.append(np.nan)
                         siga_z.append(np.nan)
@@ -3830,7 +3834,6 @@ def iup_reg_model(data, proxies, ini):
         X_clean[np.isnan(X_clean)] = 0
 
         # Calculation of the trends and uncertainties for each cell
-        a, b, c, d, e = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index] = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa

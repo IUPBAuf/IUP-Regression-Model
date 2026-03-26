@@ -1790,20 +1790,36 @@ class AppWindow(QtWidgets.QMainWindow):
                     slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
                     slope_X.append(self.X[indices][:, i[0]])
 
-        # generate list if we have inflection dates
+        # --- Trend lines passend zu Inflection Methods ---
         inflections = self.current_ini.get('inflection_point', '')
         inflection_dates = [s.strip() for s in inflections.split(',') if s.strip()]
-        n_plots = 1 if not inflection_dates else len(inflection_dates) + 1 - self.current_ini.get('inflection_method', '').count('gap')
-        subtitles = []
-        if n_plots == 1:
-            subtitles = [None]  # no subtitle, just one plot
-        else:
-            subtitles.append(f"before {inflection_dates[0]}")
-            for i in range(len(inflection_dates) - 1):
-                subtitles.append(f"between {inflection_dates[i]} and {inflection_dates[i + 1]}")
-            subtitles.append(f"after {inflection_dates[-1]}")
+        methods = self.current_ini.get('inflection_method', [])
 
-        trend_lines = [f'trend {subtitles[k]}: {v:.2f} ± {Y_uncert[k] * 2:.2f} %/decade' for k, v in enumerate(Y_trend)]
+        Y_trend = np.atleast_1d(Y_trend)  # sicherstellen, dass es ein Array ist
+        Y_uncert = np.atleast_1d(Y_uncert)
+
+        trend_lines = []
+        trend_idx = 0  # Index über Y_trend / Y_uncert
+
+        if not inflection_dates:
+            trend_lines.append(f'trend: {Y_trend[0]:.2f} ± {Y_uncert[0] * 2:.2f} %/decade')
+        else:
+            n_segments = len(inflection_dates) + 1
+            for i in range(n_segments):
+                method = methods[i] if i < len(methods) else 'independent'
+                if method == 'gap':
+                    continue
+                if i == 0:
+                    label = f"before {inflection_dates[0]}"
+                elif i == len(inflection_dates):
+                    label = f"after {inflection_dates[-1]}"
+                else:
+                    label = f"between {inflection_dates[i - 1]} and {inflection_dates[i]}"
+
+                trend_lines.append(f'trend {label}: {Y_trend[trend_idx]:.2f} ± {Y_uncert[trend_idx] * 2:.2f} %/decade')
+                trend_idx += 1
+
+        # r² und RMS anhängen
         trend_lines.append(f'   r² = {r2:.2f}, RMS = {rms:.2f} {self.current_ini.get("o3_var_unit", "")}')
         trend_string = '\n'.join(trend_lines)
 
@@ -1811,21 +1827,36 @@ class AppWindow(QtWidgets.QMainWindow):
         Y_slope = Y_slope[valid_rows]
         plot_number = 1
 
-        # inflection_methods = [str(m).strip().lower() for m in self.current_ini.get('inflection_method', '')]
         if self.current_ini.get('inflection_point', None):
-            inflection_points = [dt.datetime.strptime(d.strip(), '%Y-%m').date() for d in self.current_ini.get('inflection_point').split(',')]
-            for k, inflection_point in enumerate(sorted(inflection_points)):
-                # Find index where time >= inflection point
-                # breakpoint_index = np.where([(t.year, t.month) >= (inflection_point.year, inflection_point.month) for t in self.time[valid_rows]])[0][0]
-                times = np.array(self.time[valid_rows])
-                idx = np.where(times >= inflection_point)[0]
-                if idx.size == 0:
-                    continue
-                breakpoint_index = idx[0]
+            inflection_points = []
+            for d in self.current_ini.get('inflection_point').split(','):
+                d = d.strip()
+                if d:
+                    try:
+                        inflection_points.append(dt.datetime.strptime(d, '%Y-%m').date())
+                    except:
+                        continue
+            methods = [str(m).strip().lower() for m in self.current_ini.get('inflection_method', [])]
+            times_arr = np.array(self.time[valid_rows])
+            Y_slope_extended = Y_slope.copy()
 
-                # Insert NaN into both X_slope and Y_slope at the breakpoint
-                X_slope = np.insert(X_slope, breakpoint_index + k, X_slope[breakpoint_index + k])
-                Y_slope = np.insert(Y_slope, breakpoint_index + k, np.nan)
+            segment_starts = [0]
+            for ip in sorted(inflection_points):
+                idx = np.where(times_arr >= ip)[0]
+                if idx.size > 0:
+                    segment_starts.append(idx[0])
+            segment_ends = segment_starts[1:] + [len(Y_slope_extended)]
+
+            for i, (start, end) in enumerate(zip(segment_starts, segment_ends)):
+                method = methods[i] if i < len(methods) else 'ind'
+                if 'gap' in method:
+                    Y_slope_extended[start:end] = np.nan
+                elif 'pwl' in method:
+                    continue
+                else:
+                    if start != 0 and start < len(Y_slope_extended):
+                        Y_slope_extended[start] = np.nan
+            Y_slope = Y_slope_extended
 
         Y_slope_clean = Y_slope.copy()
 
@@ -1893,21 +1924,28 @@ class AppWindow(QtWidgets.QMainWindow):
         inflection_dates = [s.strip() for s in inflections.split(',') if s.strip()]
         n_plots = 1 if not inflection_dates else len(inflection_dates) + 1 - self.current_ini.get('inflection_method', '').count('gap')
 
-        # generate subtitles if we have inflection dates
         subtitles = []
-        if n_plots == 1:
-            subtitles = [None]  # no subtitle, just one plot
+        methods = self.current_ini.get('inflection_method', [])
+        n_infl = len(inflection_dates)
+        if n_infl == 0:
+            subtitles = [None]
         else:
-            subtitles.append(f"before {inflection_dates[0]}")
-            for i in range(len(inflection_dates) - 1):
-                subtitles.append(f"between {inflection_dates[i]} and {inflection_dates[i + 1]}")
-            subtitles.append(f"after {inflection_dates[-1]}")
+            for i in range(n_infl + 1):
+                method = methods[i] if i < len(methods) else 'independent'
 
-        # prepare figure and axes
+                if method == 'gap':
+                    continue
+
+                if i == 0:
+                    subtitles.append(f"before {inflection_dates[0]}")
+                elif i == n_infl:
+                    subtitles.append(f"after {inflection_dates[-1]}")
+                else:
+                    subtitles.append(f"between {inflection_dates[i - 1]} and {inflection_dates[i]}")
+
         fig = self.con_canvas.figure
         fig.clf()
         axes = fig.subplots(1, n_plots, squeeze=False)[0]
-        # axes = axes[0]  # flatten row
 
         bounds = np.arange(-10, 11, 1, dtype=int)
         colors = ["#08306b", "#0b4d6e", "#136b88", "#198aa2", "#1fa8bb", "#26c6d5", "#52dce1", "#7ee8eb", "#a5f2f3", "#e0ffff", "#fff4d6", "#fdd49e", "#fbc27b", "#fdae6b", "#fc8d3c", "#f16913",

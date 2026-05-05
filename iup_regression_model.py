@@ -637,10 +637,12 @@ class AppWindow(QtWidgets.QMainWindow):
         # Plotting Measurement Density
         self.dim_cell_layout = self.dim_cell_widget.layout()
         self.dim_cell_boxes = []
-        # self.plot_button_cell.clicked.connect(self.plot_observations_figure)
+        self.plot_button_cell.clicked.connect(self.plot_obs_figure)
         self.cell_layout = QVBoxLayout(self.cell_fig_widget)
         self.cell_canvas = MplCanvas(self.cell_fig_widget)
         self.cell_layout.addWidget(self.cell_canvas)
+        self.cell_toolbar = NavigationToolbar(self.cell_canvas, self.cell_fig_widget)
+        self.cell_layout.addWidget(self.cell_toolbar)
 
         # Plotting Proxies
         self.dim_proxy_layout = self.dim_proxy_widget.layout()
@@ -1370,7 +1372,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         str_groups = get_string_groups(self.proxy_string)
         for key, i in str_groups.items():
-            if key[0] == 'proxy':
+            if key[0] == 'proxy' and key[-1] != 'gap':
                 col_layout = QVBoxLayout()
                 check = QtWidgets.QCheckBox()
                 check.setText(key[3])
@@ -1394,7 +1396,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         str_groups = get_string_groups(self.proxy_string)
         for key, i in str_groups.items():
-            if key[0] == 'proxy':
+            if key[0] == 'proxy' and key[-1] != 'gap':
                 proxies.append(key[3])
 
         combo.addItems(proxies)
@@ -1770,7 +1772,6 @@ class AppWindow(QtWidgets.QMainWindow):
         if not isinstance(Y_trend, (list, np.ndarray)):
             Y_trend = [Y_trend]
             Y_uncert = [Y_uncert]
-
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
         common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X, return_indices=True)
         residuals = Y[idx_Y] - Y_model[idx_Y_model]
@@ -2134,6 +2135,133 @@ class AppWindow(QtWidgets.QMainWindow):
         self.resi_canvas.figure.tight_layout()
         self.resi_canvas.draw()
 
+    def plot_obs_figure(self):
+        self.cell_canvas.figure.clf()
+
+        obs = self.obs_counts
+        valid = self.obs_valid
+        data = copy.deepcopy(self.current_data)
+
+        thresholds = [float(self.current_ini.get('filter_fill_fraction', 0.7)), float(self.current_ini.get('filter_internal_fraction', 0.5))]
+        print(thresholds)
+
+        plot_indices = ()
+        for k, combo in enumerate(self.dim_cell_boxes):
+            if combo.currentIndex() == 0:
+                plot_indices += (slice(None),)
+                x_grid = getattr(data, data.dim_array[1:][k])
+                x_label = getattr(data, data.dim_array[1:][k] + '_unit')
+            elif combo.currentIndex() == 1:
+                plot_indices += (slice(None),)
+                y_grid = getattr(data, data.dim_array[1:][k])
+                y_label = getattr(data, data.dim_array[1:][k] + '_unit')
+            else:
+                plot_indices += (combo.currentIndex() - 2,)
+
+        inflections = self.current_ini.get('inflection_point', '')
+        inflection_dates = [s.strip() for s in inflections.split(',') if s.strip()]
+        n_plots = 1 if not inflection_dates else len(inflection_dates) + 1 - self.current_ini.get('inflection_method', '').count('gap')
+
+        fig = self.cell_canvas.figure
+        axes = fig.subplots(1, n_plots, squeeze=False)[0]
+
+        cmap = plt.cm.viridis
+
+        norm = mpl.colors.Normalize(vmin=0, vmax=1)
+        vmax = np.nanmax(obs)
+        vmin = 0
+
+        for idx in range(n_plots):
+            ax = axes[idx]
+
+            this_indices = plot_indices + (idx,) if n_plots > 1 else plot_indices
+
+            if obs[this_indices].shape != (len(y_grid), len(x_grid)):
+                obs_plot = obs[this_indices].T
+                valid_plot = valid[this_indices].T
+            else:
+                obs_plot = obs[this_indices]
+                valid_plot = valid[this_indices]
+
+            filtered_mask = ~valid_plot
+
+            if self.cell_alternative.isChecked():
+                cf = ax.imshow(
+                    obs_plot,
+                    cmap=cmap,
+                    norm=norm,
+                    vmin=vmin,
+                    vmax=vmax,
+                    extent=[x_grid[0] + (x_grid[0] - x_grid[1]) / 2,
+                            x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2,
+                            y_grid[0] + (y_grid[0] - y_grid[1]) / 2,
+                            y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2],
+                    origin='lower',
+                    aspect='auto'
+                )
+
+                # --- Hatching = gefilterte Segmente ---
+                x_edges = np.zeros(len(x_grid) + 1)
+                y_edges = np.zeros(len(y_grid) + 1)
+
+                x_edges[1:-1] = (x_grid[:-1] + x_grid[1:]) / 2
+                y_edges[1:-1] = (y_grid[:-1] + y_grid[1:]) / 2
+
+                x_edges[0] = x_grid[0] - (x_grid[1] - x_grid[0]) / 2
+                x_edges[-1] = x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2
+                y_edges[0] = y_grid[0] - (y_grid[1] - y_grid[0]) / 2
+                y_edges[-1] = y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2
+
+                for i in range(obs_plot.shape[0]):
+                    for j in range(obs_plot.shape[1]):
+                        if filtered_mask[i, j]:
+                            rect = patches.Rectangle(
+                                (x_edges[j], y_edges[i]),
+                                x_edges[j + 1] - x_edges[j],
+                                y_edges[i + 1] - y_edges[i],
+                                linewidth=0,
+                                fill=None,
+                                hatch='//',
+                                edgecolor='grey'
+                            )
+                            ax.add_patch(rect)
+
+            else:
+                # levels = np.linspace(vmin, vmax, 15)
+                levels = np.linspace(0, 1, 21)
+
+                cf = ax.contourf(x_grid, y_grid, obs_plot, cmap=cmap, norm=norm, levels=levels)
+                ax.contourf(x_grid, y_grid, filtered_mask, levels=[0.5, 1], colors='none', hatches=['\\\\'])
+                ax.contour(x_grid, y_grid, filtered_mask, levels=[0.5], colors='grey')
+
+            # --- Achsen etc. unverändert ---
+            ax.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
+            ax.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
+
+            if self.cell_invert.isChecked():
+                ax.set_ylim(ax.get_ylim()[::-1])
+
+            ax.set_xlabel(x_label, fontsize=14)
+            if idx == 0:
+                ax.set_ylabel(y_label, fontsize=14)
+            else:
+                ax.set_yticklabels([])
+                ax.set_ylabel('')
+
+        fig.suptitle(data.name + ' – number of observations per segment', fontsize=16)
+
+        divider = make_axes_locatable(axes[-1])
+        cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
+        cbar = fig.colorbar(cf, cax=cbar_ax, label='fraction of valid observations')
+        all_ticks = sorted(set(list(np.linspace(0, 1, 6)) + thresholds))
+        cbar.set_ticks(all_ticks)
+        cbar.ax.set_yticklabels([f'{t:.2f}' for t in all_ticks])
+        for t in thresholds:
+            cbar.ax.hlines(t, *cbar.ax.get_xlim(), colors='red', linewidth=1)
+
+        self.cell_canvas.figure.tight_layout(rect=[0, 0, 1, 0.95])
+        self.cell_canvas.draw()
+
     def plot_proxy_figure(self):
         # Clear the figure
         self.proxy_canvas.figure.clf()
@@ -2167,7 +2295,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
         check_idx = 0
         for key, i in str_groups.items():
-            if key[0] == 'proxy':
+            if key[0] == 'proxy' and key[-1] != 'gap':
                 if checks[check_idx]:
                     if key[1] == 'month-of-the-year':
                         Y.append(np.nansum(np.array(X[:, i]) * np.array(beta[i]), axis=1))
@@ -2243,7 +2371,7 @@ class AppWindow(QtWidgets.QMainWindow):
         str_groups = get_string_groups(self.proxy_string)
         count = 0
         for key, i in str_groups.items():
-            if key[0] == 'proxy':
+            if key[0] == 'proxy' and key[-1] != 'gap':
                 if key[1] == 'month-of-the-year':
                     if self.proxy_con_combo.currentIndex() == count:
                         proxy_indices = i
@@ -2331,7 +2459,9 @@ class AppWindow(QtWidgets.QMainWindow):
         self.proxy_string = diagnostic[4]
         self.time = diagnostic[5]
         self.trend_data = diagnostic[6]
-        self.uncertainty = diagnostic[-1]
+        self.uncertainty = diagnostic[7]
+        self.obs_counts = diagnostic[8]
+        self.obs_valid = diagnostic[9]
         self.current_ini = copy.copy(self.ini)
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
         self.current_data = set_data_limits(self.current_data, self.current_ini)
@@ -2678,103 +2808,46 @@ def parse_time(value, month=None, format=None):
         raise ValueError(f"Unrecognized date format: {value}")
 
 
-def filter_time_series(data_arr, data, monthly=True, min_window_years=2, min_valid_fraction=0.75, check_yearly_validity=True):
-    data_arr = np.ma.masked_invalid(data_arr)
-
-    months_per_year = 12 if monthly else 1
-    total_len = len(data_arr)
-
-    # --- build segment boundaries ---
-    # ensure sorted, unique, and within bounds
-    inflections = sorted(i for i in getattr(data, 'inflection_index', []) if 0 < i < total_len)
-
-    # segment start/end indices
-    segment_starts = [0] + inflections
-    segment_ends = inflections + [total_len]
-
-    # output array: fully masked by default
-    filtered_arr = np.ma.masked_all_like(data_arr)
-
-    # --- process each segment independently ---
-    for seg_start, seg_end in zip(segment_starts, segment_ends):
-
-        segment = data_arr[seg_start:seg_end]
-        seg_len = len(segment)
-
-        if seg_len == 0:
-            continue
-
-        # minimum window size for this segment
-        window_size = min_window_years * months_per_year
-
-        if seg_len < window_size:
-            # segment too short to ever be valid
-            continue
-
-        # find first valid window inside this segment
-        start_idx = None
-        for i in range(seg_len - window_size + 1):
-            window = segment[i:i + window_size]
-            if window.count() / window_size >= min_valid_fraction:
-                start_idx = i
-                break
-
-        if start_idx is None:
-            # whole segment invalid
-            continue
-
-        # provisional copy from valid start onward
-        seg_filtered = np.ma.masked_all_like(segment)
-        seg_filtered[start_idx:] = segment[start_idx:]
-
-        # optional yearly validity check
-        if check_yearly_validity:
-            n_months = seg_len - start_idx
-            n_years = n_months // months_per_year
-
-            for y in range(n_years):
-                year_start = start_idx + y * months_per_year
-                year_end = year_start + months_per_year
-
-                year_slice = segment[year_start:year_end]
-                actual_len = len(year_slice)
-
-                if actual_len == 0:
-                    continue
-
-                if year_slice.count() / actual_len >= min_valid_fraction:
-                    seg_filtered[year_start:year_end] = year_slice
-                else:
-                    seg_filtered[year_start:year_end] = np.ma.masked
-
-        # insert filtered segment back into full array
-        filtered_arr[seg_start:seg_end] = seg_filtered
-
-    return filtered_arr
-
-
-def filter_by_time_coverage(data_arr, data, min_fraction=0.7, min_internal_fraction=0.5):
+def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=0.5, max_gap_length=6, min_core_length=0):
     arr = data_arr.filled(np.nan).copy()
     n = len(arr)
 
     inf_idx = list(getattr(data, 'inflection_index', []) or [])
     inf_idx = sorted([int(i) for i in inf_idx])
-
     bounds = [0] + inf_idx + [n]
 
-    for seg in range(len(bounds) - 1):
+    methods = ini.get('inflection_method', [])
+    if isinstance(methods, str):
+        methods = [m.strip() for m in methods.split(',') if m.strip()]
+
+    n_segments = len(bounds) - 1
+
+    seg_counts_full = []
+    seg_valid_full = []
+
+    for seg in range(n_segments):
         start, end = bounds[seg], bounds[seg + 1]
 
         segment = arr[start:end]
         valid_mask = ~np.isnan(segment)
 
-        if np.sum(valid_mask) == 0:
+        if seg < len(methods) and methods[seg] == 'gap':
+            continue
+
+        seg_len = len(valid_mask)
+        n_valid = int(np.sum(valid_mask))
+
+        seg_counts_full.append(n_valid / seg_len if seg_len > 0 else np.nan)
+        seg_valid_flag = True
+
+        if n_valid == 0:
             print(f'Segment {seg}: no valid data → set to NaN')
+            seg_valid_flag = False
             arr[start:end] = np.nan
+            seg_valid_full.append(seg_valid_flag)
             continue
 
         valid_indices = np.where(valid_mask)[0]
-
         first_idx = valid_indices[0]
         last_idx = valid_indices[-1]
 
@@ -2788,45 +2861,53 @@ def filter_by_time_coverage(data_arr, data, min_fraction=0.7, min_internal_fract
 
         if coverage < float(min_fraction):
             print(f'Segment {seg}: coverage too small ({coverage:.2f}) → set to NaN')
+            seg_valid_flag = False
             arr[start:end] = np.nan
+            seg_valid_full.append(seg_valid_flag)
             continue
 
         if internal_fraction < float(min_internal_fraction):
             print(f'Segment {seg}: internal fraction too small ({internal_fraction:.2f}) → set to NaN')
+            seg_valid_flag = False
             arr[start:end] = np.nan
+            seg_valid_full.append(seg_valid_flag)
             continue
 
-    return np.ma.masked_invalid(arr)
+        if max_gap_length is not None:
+            segment_core = segment[first_idx:last_idx + 1]
+            core_length = len(segment_core)
 
+            if core_length < min_core_length:
+                print(f'Segment {seg}: core too short ({core_length}) → skipped gap check')
+                seg_valid_full.append(seg_valid_flag)
+                continue
 
-def filter_by_time_density_coverage(data_arr, data, min_fraction=0.7):
-    arr = data_arr.filled(np.nan).copy()
-    n = len(arr)
+            isnan = np.isnan(segment)
+            if not np.any(isnan):
+                seg_valid_full.append(seg_valid_flag)
+                continue
 
-    # Segment boundaries
-    inf_idx = sorted([int(i) for i in getattr(data, 'inflection_index', []) or []])
-    bounds = [0] + inf_idx + [n]
+            diff = np.diff(np.concatenate(([0], isnan.view(np.int8), [0])))
+            max_gap = np.max(np.where(diff == -1)[0] - np.where(diff == 1)[0])
 
-    for seg in range(len(bounds) - 1):
-        start, end = bounds[seg], bounds[seg + 1]
-        segment = arr[start:end]
+            if 0 < max_gap_length < 1:
+                allowed_gap = int(np.floor(max_gap_length * core_length))
+            else:
+                allowed_gap = int(max_gap_length)
 
-        valid_indices = np.where(~np.isnan(segment))[0]
-        if len(valid_indices) == 0:
-            print(f'Segment {seg}: no valid data → set to NaN')
-            arr[start:end] = np.nan
-            continue
+            if max_gap > allowed_gap:
+                print(f'Segment {seg}: gap too large ({max_gap} > {allowed_gap}) → set to NaN')
+                seg_valid_flag = False
+                arr[start:end] = np.nan
+                seg_valid_full.append(seg_valid_flag)
+                continue
 
-        first_idx, last_idx = valid_indices[0], valid_indices[-1]
-        segment_length = end - start
-        print(segment_length)
-        print(first_idx, last_idx)
-        # Prüfen, ob der Anfang oder das Ende des Segments zu groß ist
-        if first_idx / segment_length > (1 - float(min_fraction)) or (segment_length - last_idx - 1) / segment_length > (1 - float(min_fraction)):
-            print(f'Segment {seg}: coverage too small → set to NaN')
-            arr[start:end] = np.nan
+        seg_valid_full.append(seg_valid_flag)
 
-    return np.ma.masked_invalid(arr)
+    seg_counts = np.array(seg_counts_full)
+    seg_valid = np.array(seg_valid_full, dtype=bool)
+
+    return np.ma.masked_invalid(arr), seg_counts, seg_valid
 
 
 def get_string_groups(string_list):
@@ -3764,6 +3845,8 @@ def iup_reg_model(data, proxies, ini):
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     data_all = np.empty(X_all.shape[:-1])
+    seg_counts_all = np.empty(trenda_z.shape)
+    seg_valid_all = np.empty(trenda_z.shape, dtype=bool)
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
@@ -3785,47 +3868,45 @@ def iup_reg_model(data, proxies, ini):
         print(f"{it.multi_index}: calculating trend ({', '.join(coord_strings)})")
 
         data_arr = np.ma.masked_invalid(data.o3[(slice(None),) + it.multi_index])
-        # data_arr = filter_time_series(data_arr, data, monthly=True, min_window_years=3, min_valid_fraction=0.5, check_yearly_validity=True)
-        data_arr = filter_by_time_coverage(data_arr, data, min_fraction=ini.get('fill_fraction', 0.70), min_internal_fraction=ini.get('skip_percentage', 0.50))
+        data_arr, seg_counts, seg_valid = filter_segment(data_arr, data, ini, min_fraction=ini.get('filter_fill_fraction', 0.70), min_internal_fraction=ini.get('filter_internal_fraction', 0.50), max_gap_length=ini.get('filter_max_gap_length', None), min_core_length=ini.get('filter_min_core_length', 0))
 
-        # if check == 0 and anom_check == 'True':
-        #     for k in range(12):
-        #         if ini.get('anomaly_method', 'rel') == 'abs':
-        #             data_arr[time.month == k + 1] = data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
-        #         else:
-        #             data_arr[time.month == k + 1] = (data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))) / np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
-        # elif check == 1:
-        #     for k, i in enumerate(np.unique(time.year)):
-        #         if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / len(np.where(time.year == i)[0]) <= float(ini.get('skip_percentage', 0.75)):
-        #             data_arr[k] = np.nan
-        #             continue
-        #         data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)])
-        #     data_arr = data_arr[:len(np.unique(time.year))]
-        #     if anom_check == 'True':
-        #         if ini.get('anomaly_method', 'rel') == 'abs':
-        #             data_arr = data_arr - np.nanmean(data_arr)
-        #         else:
-        #             data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
-        # elif check == 2:
-        #     for k, i in enumerate(np.unique(time.year)):
-        #         time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
-        #         if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
-        #             data_arr[k] = np.nan
-        #             continue
-        #         data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
-        #     data_arr = data_arr[:len(np.unique(time.year))]
-        #     if anom_check == 'True':
-        #         if ini.get('anomaly_method', 'rel') == 'abs':
-        #             data_arr = data_arr - np.nanmean(data_arr)
-        #         else:
-        #             data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
+        if check == 0 and anom_check == 'True':
+            for k in range(12):
+                if ini.get('anomaly_method', 'rel') == 'abs':
+                    data_arr[time.month == k + 1] = data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
+                else:
+                    data_arr[time.month == k + 1] = (data_arr[time.month == k + 1] - np.nanmean(data_arr[time.month == k + 1].filled(np.nan))) / np.nanmean(data_arr[time.month == k + 1].filled(np.nan))
+        elif check == 1:
+            for k, i in enumerate(np.unique(time.year)):
+                if len(np.nonzero(data_arr[np.where(time.year == i)])[0]) / len(np.where(time.year == i)[0]) <= float(ini.get('skip_percentage', 0.75)):
+                    data_arr[k] = np.nan
+                    continue
+                data_arr[k] = np.nanmean(data_arr[np.where(time.year == i)])
+            data_arr = data_arr[:len(np.unique(time.year))]
+            if anom_check == 'True':
+                if ini.get('anomaly_method', 'rel') == 'abs':
+                    data_arr = data_arr - np.nanmean(data_arr)
+                else:
+                    data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
+        elif check == 2:
+            for k, i in enumerate(np.unique(time.year)):
+                time_index = np.arange((k * 12), min((k * 12) + 12, len(time)), 1)
+                if len(data_arr[time_index][np.in1d(time[time_index].month, month_index)].nonzero()[0]) / len(month_index) <= float(ini.get('skip_percentage', 0.75)):
+                    data_arr[k] = np.nan
+                    continue
+                data_arr[k] = np.nanmean(data_arr[time_index][np.in1d(time[time_index].month, month_index)])
+            data_arr = data_arr[:len(np.unique(time.year))]
+            if anom_check == 'True':
+                if ini.get('anomaly_method', 'rel') == 'abs':
+                    data_arr = data_arr - np.nanmean(data_arr)
+                else:
+                    data_arr = (data_arr - np.nanmean(data_arr)) / np.nanmean(data_arr)
 
         nanmask = ~np.isnan(data_arr.filled(np.nan))
         gap_mask = np.zeros_like(nanmask, dtype=bool)
         if 'inflection_method' in ini and 'gap' in ini['inflection_method']:
             methods = ini['inflection_method']
             inf_idx = list(data.inflection_index)
-
             bounds = [0] + inf_idx + [len(nanmask)]
 
             for seg, method in enumerate(methods):
@@ -3880,9 +3961,11 @@ def iup_reg_model(data, proxies, ini):
         beta_all[it.multi_index + (slice(None),)][~col_mask] = beta
         betaa_all[it.multi_index + (slice(None),)][~col_mask] = betaa
         data_all[(slice(None),) + it.multi_index] = data_arr.filled(np.nan)
+        seg_counts_all[it.multi_index] = seg_counts
+        seg_valid_all[it.multi_index] = seg_valid
         # Go to next iteration:
         it.iternext()
-    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[time_log], data_all, covbetaa_z]
+    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[time_log], data_all, covbetaa_z, seg_counts_all, seg_valid_all]
     return trenda_z, siga_z, diagnostic
 
 

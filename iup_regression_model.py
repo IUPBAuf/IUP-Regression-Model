@@ -1761,10 +1761,10 @@ class AppWindow(QtWidgets.QMainWindow):
         valid_cols = ~np.isnan(self.X[indices]).all(axis=0)
         valid_rows = ~np.isnan(self.X[indices]).all(axis=1)
 
-        X_og = data.time
+        X_og = np.array([d.replace(day=15) for d in data.time])
         Y_og = data.o3[indices]
         Y = self.trend_data[indices]
-        X = self.time
+        X = np.array([d.replace(day=15) for d in self.time])
         X_slope = copy.deepcopy(self.time[valid_rows])
 
         Y_trend = self.trends[tuple(plot_indices)]
@@ -1773,10 +1773,12 @@ class AppWindow(QtWidgets.QMainWindow):
             Y_trend = [Y_trend]
             Y_uncert = [Y_uncert]
         Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
-        common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X, return_indices=True)
+        X_model = np.array(self.time)[valid_rows]
+        common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X_model, return_indices=True)
         residuals = Y[idx_Y] - Y_model[idx_Y_model]
         rms = np.sqrt(np.nanmean(residuals ** 2))
         r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y - np.nanmean(Y)) ** 2))
+
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
@@ -1824,10 +1826,12 @@ class AppWindow(QtWidgets.QMainWindow):
         trend_lines.append(f'   r² = {r2:.2f}, RMS = {rms:.2f} {self.current_ini.get("o3_var_unit", "")}')
         trend_string = '\n'.join(trend_lines)
 
-        Y_slope = np.array(slope_X).T @ np.array(slope_beta)
+        slope_beta_arr = np.array(slope_beta, dtype=float)
+        slope_X_arr = np.array(slope_X, dtype=float)
+        valid = ~np.isnan(slope_beta_arr)
+        Y_slope = slope_X_arr[valid].T @ slope_beta_arr[valid]
         Y_slope = Y_slope[valid_rows]
         plot_number = 1
-
         if self.current_ini.get('inflection_point', None):
             inflection_points = []
             for d in self.current_ini.get('inflection_point').split(','):
@@ -1859,18 +1863,6 @@ class AppWindow(QtWidgets.QMainWindow):
                         Y_slope_extended[start] = np.nan
             Y_slope = Y_slope_extended
 
-        Y_slope_clean = Y_slope.copy()
-
-        nan_idx = np.where(np.isnan(Y_slope_clean))[0]
-        segment_edges = np.concatenate(([-1], nan_idx, [len(Y_slope_clean)]))
-        for start, end in zip(segment_edges[:-1], segment_edges[1:]):
-            seg = Y_slope_clean[start + 1:end]
-            if seg.size == 0:
-                continue
-            if np.allclose(seg, 0.0, atol=1e-10, equal_nan=False):
-                Y_slope_clean[start + 1:end] = np.nan
-        Y_slope = Y_slope_clean
-
         self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
         bounds = np.arange(-9, 10, 1, dtype=int)
@@ -1885,7 +1877,15 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
 
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
-            ax.plot(X_slope, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+            # ax.plot(X_slope, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+            first = True
+            for start, end in zip(segment_starts, segment_ends):
+                x_seg = X_slope[start:end]
+                y_seg = Y_slope[start:end]
+                if len(x_seg) == 0 or np.all(np.isnan(y_seg)):
+                    continue
+                ax.plot(x_seg, y_seg, color='red', path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], linewidth=1.3, label='Trend' if first else None)
+                first = False
             ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
@@ -1894,7 +1894,6 @@ class AppWindow(QtWidgets.QMainWindow):
         self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
         self.model_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
         self.model_canvas.figure.tight_layout()
-
         self.model_canvas.draw()
 
     def plot_contour_figure(self):
@@ -2139,11 +2138,15 @@ class AppWindow(QtWidgets.QMainWindow):
         self.cell_canvas.figure.clf()
 
         obs = self.obs_counts
-        valid = self.obs_valid
+        flags = self.obs_valid
+
+        filter_colors = {1: '#000000', 2: '#d73027', 3: '#fc8d59', 4: '#4575b4'}
+        filter_labels = {1: 'no data', 2: 'low coverage', 3: 'low density', 4: 'large gap'}
+
         data = copy.deepcopy(self.current_data)
 
         thresholds = [float(self.current_ini.get('filter_fill_fraction', 0.7)), float(self.current_ini.get('filter_internal_fraction', 0.5))]
-        print(thresholds)
+        threshold_map = {2: thresholds[0], 3: thresholds[1]}
 
         plot_indices = ()
         for k, combo in enumerate(self.dim_cell_boxes):
@@ -2165,11 +2168,10 @@ class AppWindow(QtWidgets.QMainWindow):
         fig = self.cell_canvas.figure
         axes = fig.subplots(1, n_plots, squeeze=False)[0]
 
-        cmap = plt.cm.viridis
+        cmap = plt.cm.viridis.copy()
+        cmap.set_bad(color='lightgray')
 
         norm = mpl.colors.Normalize(vmin=0, vmax=1)
-        vmax = np.nanmax(obs)
-        vmin = 0
 
         for idx in range(n_plots):
             ax = axes[idx]
@@ -2178,63 +2180,54 @@ class AppWindow(QtWidgets.QMainWindow):
 
             if obs[this_indices].shape != (len(y_grid), len(x_grid)):
                 obs_plot = obs[this_indices].T
-                valid_plot = valid[this_indices].T
+                flags_plot = flags[this_indices]
             else:
                 obs_plot = obs[this_indices]
-                valid_plot = valid[this_indices]
-
-            filtered_mask = ~valid_plot
+                flags_plot = flags[this_indices]
 
             if self.cell_alternative.isChecked():
-                cf = ax.imshow(
-                    obs_plot,
-                    cmap=cmap,
-                    norm=norm,
-                    vmin=vmin,
-                    vmax=vmax,
-                    extent=[x_grid[0] + (x_grid[0] - x_grid[1]) / 2,
-                            x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2,
-                            y_grid[0] + (y_grid[0] - y_grid[1]) / 2,
-                            y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2],
-                    origin='lower',
-                    aspect='auto'
-                )
+                obs_plot_masked = np.ma.masked_where(obs_plot == 0, obs_plot)
+                cf = ax.imshow(obs_plot_masked, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0] - x_grid[1]) / 2, x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2, y_grid[0] + (y_grid[0] - y_grid[1]) / 2, y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2], origin='lower', aspect='auto')
 
-                # --- Hatching = gefilterte Segmente ---
-                x_edges = np.zeros(len(x_grid) + 1)
-                y_edges = np.zeros(len(y_grid) + 1)
+                for f, color in filter_colors.items():
+                    if f == 1:
+                        continue
+                    mask = (flags_plot == f)
+                    if not np.any(mask):
+                        continue
 
-                x_edges[1:-1] = (x_grid[:-1] + x_grid[1:]) / 2
-                y_edges[1:-1] = (y_grid[:-1] + y_grid[1:]) / 2
+                    x_edges = np.zeros(len(x_grid) + 1)
+                    y_edges = np.zeros(len(y_grid) + 1)
 
-                x_edges[0] = x_grid[0] - (x_grid[1] - x_grid[0]) / 2
-                x_edges[-1] = x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2
-                y_edges[0] = y_grid[0] - (y_grid[1] - y_grid[0]) / 2
-                y_edges[-1] = y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2
+                    x_edges[1:-1] = (x_grid[:-1] + x_grid[1:]) / 2
+                    y_edges[1:-1] = (y_grid[:-1] + y_grid[1:]) / 2
 
-                for i in range(obs_plot.shape[0]):
-                    for j in range(obs_plot.shape[1]):
-                        if filtered_mask[i, j]:
-                            rect = patches.Rectangle(
-                                (x_edges[j], y_edges[i]),
-                                x_edges[j + 1] - x_edges[j],
-                                y_edges[i + 1] - y_edges[i],
-                                linewidth=0,
-                                fill=None,
-                                hatch='//',
-                                edgecolor='grey'
-                            )
-                            ax.add_patch(rect)
+                    x_edges[0] = x_grid[0] - (x_grid[1] - x_grid[0]) / 2
+                    x_edges[-1] = x_grid[-1] + (x_grid[-1] - x_grid[-2]) / 2
+                    y_edges[0] = y_grid[0] - (y_grid[1] - y_grid[0]) / 2
+                    y_edges[-1] = y_grid[-1] + (y_grid[-1] - y_grid[-2]) / 2
+
+                    for i in range(mask.shape[0]):
+                        for j in range(mask.shape[1]):
+                            if mask[i, j]:
+                                rect = patches.Rectangle(
+                                    (x_edges[j], y_edges[i]), x_edges[j + 1] - x_edges[j], y_edges[i + 1] - y_edges[i], linewidth=0, fill=False, hatch='////', edgecolor=color)
+                                ax.add_patch(rect)
 
             else:
-                # levels = np.linspace(vmin, vmax, 15)
                 levels = np.linspace(0, 1, 21)
+                obs_plot_masked = np.ma.masked_where(obs_plot == 0, obs_plot)
+                cf = ax.contourf(x_grid, y_grid, obs_plot_masked, cmap=cmap, norm=norm, levels=levels)
+                for f, color in filter_colors.items():
+                    if f == 1:
+                        continue
+                    mask = (flags_plot == f)
+                    cs = ax.contourf(x_grid, y_grid, mask, levels=[0.5, 1], colors='none', hatches=['////'])
 
-                cf = ax.contourf(x_grid, y_grid, obs_plot, cmap=cmap, norm=norm, levels=levels)
-                ax.contourf(x_grid, y_grid, filtered_mask, levels=[0.5, 1], colors='none', hatches=['\\\\'])
-                ax.contour(x_grid, y_grid, filtered_mask, levels=[0.5], colors='grey')
+                    for collection in cs.collections:
+                        collection.set_edgecolor(color)
+                        collection.set_linewidth(0)
 
-            # --- Achsen etc. unverändert ---
             ax.set_xlim([np.nanmin(x_grid), np.nanmax(x_grid)])
             ax.set_ylim([np.nanmin(y_grid), np.nanmax(y_grid)])
 
@@ -2248,18 +2241,34 @@ class AppWindow(QtWidgets.QMainWindow):
                 ax.set_yticklabels([])
                 ax.set_ylabel('')
 
-        fig.suptitle(data.name + ' – number of observations per segment', fontsize=16)
+        fig.suptitle(data.name + ' – observations per segment', fontsize=16)
 
         divider = make_axes_locatable(axes[-1])
         cbar_ax = divider.append_axes("right", size="5%", pad=0.2)
-        cbar = fig.colorbar(cf, cax=cbar_ax, label='fraction of valid observations')
-        all_ticks = sorted(set(list(np.linspace(0, 1, 6)) + thresholds))
-        cbar.set_ticks(all_ticks)
-        cbar.ax.set_yticklabels([f'{t:.2f}' for t in all_ticks])
-        for t in thresholds:
-            cbar.ax.hlines(t, *cbar.ax.get_xlim(), colors='red', linewidth=1)
+        cbar = fig.colorbar(cf, cax=cbar_ax, label='observations [%/segment]')
+        ticks = np.linspace(0, 1, 6)
+        cbar.set_ticks(ticks)
+        cbar.ax.set_yticklabels([f'{t:.2f}' for t in ticks])
+        for f, t in threshold_map.items():
+            color = filter_colors[f]
+            cbar.ax.hlines(t, *cbar.ax.get_xlim(), colors=color, linewidth=2)
+            cbar.ax.text(1.05, t, str(t), color=color, va='center', ha='left', transform=cbar.ax.get_yaxis_transform())
 
-        self.cell_canvas.figure.tight_layout(rect=[0, 0, 1, 0.95])
+        legend_handles = []
+
+        for f, color in filter_colors.items():
+            if f == 1:
+                continue
+            legend_handles.append(patches.Patch(facecolor='none', edgecolor=color, hatch='////', label=filter_labels[f], linewidth=0))
+        fig.legend(
+            handles=legend_handles,
+            loc='lower center',
+            ncol=len(legend_handles),
+            frameon=False,
+            fontsize=12
+        )
+
+        self.cell_canvas.figure.tight_layout(rect=[0, 0.05, 1, 0.95])
         self.cell_canvas.draw()
 
     def plot_proxy_figure(self):
@@ -2823,7 +2832,7 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
     n_segments = len(bounds) - 1
 
     seg_counts_full = []
-    seg_valid_full = []
+    seg_flag_full = []
 
     for seg in range(n_segments):
         start, end = bounds[seg], bounds[seg + 1]
@@ -2838,13 +2847,13 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
         n_valid = int(np.sum(valid_mask))
 
         seg_counts_full.append(n_valid / seg_len if seg_len > 0 else np.nan)
-        seg_valid_flag = True
+        flag = 0  # default: valid
 
         if n_valid == 0:
             print(f'Segment {seg}: no valid data → set to NaN')
-            seg_valid_flag = False
+            flag = 1
             arr[start:end] = np.nan
-            seg_valid_full.append(seg_valid_flag)
+            seg_flag_full.append(flag)
             continue
 
         valid_indices = np.where(valid_mask)[0]
@@ -2860,17 +2869,17 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
         internal_fraction = internal_valid / covered_length
 
         if coverage < float(min_fraction):
-            print(f'Segment {seg}: coverage too small ({coverage:.2f}) → set to NaN')
-            seg_valid_flag = False
+            print(f'Segment {seg}: temporal coverage too small ({coverage:.2f}) → set to NaN')
+            flag = 2
             arr[start:end] = np.nan
-            seg_valid_full.append(seg_valid_flag)
+            seg_flag_full.append(flag)
             continue
 
         if internal_fraction < float(min_internal_fraction):
-            print(f'Segment {seg}: internal fraction too small ({internal_fraction:.2f}) → set to NaN')
-            seg_valid_flag = False
+            print(f'Segment {seg}: internal data density too low ({internal_fraction:.2f}) → set to NaN')
+            flag = 3
             arr[start:end] = np.nan
-            seg_valid_full.append(seg_valid_flag)
+            seg_flag_full.append(flag)
             continue
 
         if max_gap_length is not None:
@@ -2879,12 +2888,12 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
 
             if core_length < min_core_length:
                 print(f'Segment {seg}: core too short ({core_length}) → skipped gap check')
-                seg_valid_full.append(seg_valid_flag)
+                seg_flag_full.append(flag)
                 continue
 
             isnan = np.isnan(segment)
             if not np.any(isnan):
-                seg_valid_full.append(seg_valid_flag)
+                seg_flag_full.append(flag)
                 continue
 
             diff = np.diff(np.concatenate(([0], isnan.view(np.int8), [0])))
@@ -2897,17 +2906,17 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
 
             if max_gap > allowed_gap:
                 print(f'Segment {seg}: gap too large ({max_gap} > {allowed_gap}) → set to NaN')
-                seg_valid_flag = False
+                flag = 4
                 arr[start:end] = np.nan
-                seg_valid_full.append(seg_valid_flag)
+                seg_flag_full.append(flag)
                 continue
 
-        seg_valid_full.append(seg_valid_flag)
+        seg_flag_full.append(flag)
 
     seg_counts = np.array(seg_counts_full)
-    seg_valid = np.array(seg_valid_full, dtype=bool)
+    seg_flags = np.array(seg_flag_full, dtype=int)
 
-    return np.ma.masked_invalid(arr), seg_counts, seg_valid
+    return np.ma.masked_invalid(arr), seg_counts, seg_flags
 
 
 def get_string_groups(string_list):
@@ -3846,7 +3855,7 @@ def iup_reg_model(data, proxies, ini):
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     data_all = np.empty(X_all.shape[:-1])
     seg_counts_all = np.empty(trenda_z.shape)
-    seg_valid_all = np.empty(trenda_z.shape, dtype=bool)
+    seg_valid_all = np.empty(trenda_z.shape, dtype=int)
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])

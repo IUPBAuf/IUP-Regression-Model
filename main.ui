@@ -1170,7 +1170,11 @@
            </attribute>
            <layout class="QVBoxLayout" name="verticalLayout_22">
             <item>
-             <widget class="QWidget" name="cell_fig_widget" native="true"/>
+             <widget class="QWidget" name="cell_fig_widget" native="true">
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Segment filters:&lt;/span&gt;&lt;/p&gt;&lt;ul style=&quot;margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;&quot;&gt;&lt;li style=&quot; margin-top:12px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Low Coverage&lt;/span&gt;: fraction of valid observations in the segment&lt;/li&gt;&lt;li style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Low Density&lt;/span&gt;: fraction of valid data within the segment core&lt;/li&gt;&lt;li style=&quot; margin-top:0px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Large Gap&lt;/span&gt;: maximum allowed consecutive missing values&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Segments failing any criterion are excluded.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+             </widget>
             </item>
             <item>
              <widget class="QWidget" name="widget_27" native="true">

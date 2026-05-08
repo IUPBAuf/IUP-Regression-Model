@@ -673,6 +673,12 @@ class AppWindow(QtWidgets.QMainWindow):
         self.menu_save.triggered.connect(self.save_file)
         self.menu_save_plot.triggered.connect(self.save_plot)
 
+        self.progressBar = QtWidgets.QProgressBar()
+        self.progressBar.setVisible(False)
+        self.progressBar.setRange(0, 100)
+        self.progressBar.setValue(0)
+        self.statusBar().addPermanentWidget(self.progressBar)
+
         self.frozen_list.horizontalHeader().sectionResized.connect(self.sync_frozen_to_main)
 
         # Load ini settings and input the data into the UI
@@ -1772,37 +1778,49 @@ class AppWindow(QtWidgets.QMainWindow):
         if not isinstance(Y_trend, (list, np.ndarray)):
             Y_trend = [Y_trend]
             Y_uncert = [Y_uncert]
-        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
+
+        Y_model = np.matmul(
+            self.X[indices][valid_rows][:, valid_cols],
+            np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0)
+        )
         X_model = np.array(self.time)[valid_rows]
+
         common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X_model, return_indices=True)
         residuals = Y[idx_Y] - Y_model[idx_Y_model]
         rms = np.sqrt(np.nanmean(residuals ** 2))
-        r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y - np.nanmean(Y)) ** 2))
+        r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y[idx_Y] - np.nanmean(Y[idx_Y])) ** 2))
 
         slope_beta = []
         slope_X = []
         str_groups = get_string_groups(self.proxy_string)
+
         for key, i in str_groups.items():
             if key[0] == 'proxy':
                 continue
+            if key[1] == 'month-of-the-year':
+                slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
+                slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
             else:
-                if key[1] == 'month-of-the-year':
-                    slope_beta.append(np.nanmean(self.betaa[tuple(plot_indices)][i], axis=0))
-                    slope_X.append([np.nanmax(row[tuple(plot_indices)][i]) for row in self.X])
-                else:
-                    slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
-                    slope_X.append(self.X[indices][:, i[0]])
+                slope_beta.append(self.betaa[tuple(plot_indices)][i[0]])
+                slope_X.append(self.X[indices][:, i[0]])
 
         # --- Trend lines passend zu Inflection Methods ---
         inflections = self.current_ini.get('inflection_point', '')
-        inflection_dates = [s.strip() for s in inflections.split(',') if s.strip()]
-        methods = self.current_ini.get('inflection_method', [])
+        inflection_dates = [s.strip() for s in str(inflections).split(',') if s.strip()]
 
-        Y_trend = np.atleast_1d(Y_trend)  # sicherstellen, dass es ein Array ist
+        methods_raw = self.current_ini.get('inflection_method', [])
+        if isinstance(methods_raw, (list, tuple)):
+            methods = [str(m).strip().lower() for m in methods_raw]
+        elif methods_raw:
+            methods = [str(methods_raw).strip().lower()]
+        else:
+            methods = []
+
+        Y_trend = np.atleast_1d(Y_trend)
         Y_uncert = np.atleast_1d(Y_uncert)
 
         trend_lines = []
-        trend_idx = 0  # Index über Y_trend / Y_uncert
+        trend_idx = 0
 
         if not inflection_dates:
             trend_lines.append(f'trend: {Y_trend[0]:.2f} ± {Y_uncert[0] * 2:.2f} %/decade')
@@ -1810,8 +1828,9 @@ class AppWindow(QtWidgets.QMainWindow):
             n_segments = len(inflection_dates) + 1
             for i in range(n_segments):
                 method = methods[i] if i < len(methods) else 'independent'
-                if method == 'gap':
+                if 'gap' in method:
                     continue
+
                 if i == 0:
                     label = f"before {inflection_dates[0]}"
                 elif i == len(inflection_dates):
@@ -1819,41 +1838,46 @@ class AppWindow(QtWidgets.QMainWindow):
                 else:
                     label = f"between {inflection_dates[i - 1]} and {inflection_dates[i]}"
 
-                trend_lines.append(f'trend {label}: {Y_trend[trend_idx]:.2f} ± {Y_uncert[trend_idx] * 2:.2f} %/decade')
+                if trend_idx < len(Y_trend):
+                    trend_lines.append(
+                        f'trend {label}: {Y_trend[trend_idx]:.2f} ± {Y_uncert[trend_idx] * 2:.2f} %/decade'
+                    )
                 trend_idx += 1
 
-        # r² und RMS anhängen
         trend_lines.append(f'   r² = {r2:.2f}, RMS = {rms:.2f} {self.current_ini.get("o3_var_unit", "")}')
         trend_string = '\n'.join(trend_lines)
 
         slope_beta_arr = np.array(slope_beta, dtype=float)
         slope_X_arr = np.array(slope_X, dtype=float)
         valid = ~np.isnan(slope_beta_arr)
+
         Y_slope = slope_X_arr[valid].T @ slope_beta_arr[valid]
         Y_slope = Y_slope[valid_rows]
-        plot_number = 1
-        if self.current_ini.get('inflection_point', None):
-            inflection_points = []
-            for d in self.current_ini.get('inflection_point').split(','):
-                d = d.strip()
-                if d:
-                    try:
-                        inflection_points.append(dt.datetime.strptime(d, '%Y-%m').date())
-                    except:
-                        continue
-            methods = [str(m).strip().lower() for m in self.current_ini.get('inflection_method', [])]
-            times_arr = np.array(self.time[valid_rows])
-            Y_slope_extended = Y_slope.copy()
 
-            segment_starts = [0]
+        times_arr = np.array(self.time[valid_rows])
+
+        segment_starts = [0]
+        segment_ends = []
+
+        if inflection_dates:
+            inflection_points = []
+            for d in inflection_dates:
+                try:
+                    inflection_points.append(dt.datetime.strptime(d, '%Y-%m').date())
+                except:
+                    continue
+
             for ip in sorted(inflection_points):
                 idx = np.where(times_arr >= ip)[0]
                 if idx.size > 0:
                     segment_starts.append(idx[0])
-            segment_ends = segment_starts[1:] + [len(Y_slope_extended)]
 
+        segment_ends = segment_starts[1:] + [len(Y_slope)]
+
+        if inflection_dates:
+            Y_slope_extended = Y_slope.copy()
             for i, (start, end) in enumerate(zip(segment_starts, segment_ends)):
-                method = methods[i] if i < len(methods) else 'ind'
+                method = methods[i] if i < len(methods) else 'independent'
                 if 'gap' in method:
                     Y_slope_extended[start:end] = np.nan
                 elif 'pwl' in method:
@@ -1863,34 +1887,65 @@ class AppWindow(QtWidgets.QMainWindow):
                         Y_slope_extended[start] = np.nan
             Y_slope = Y_slope_extended
 
-        self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
+        plot_number = 1
+        self.model_canvas.axes_list = [
+            self.model_canvas.figure.add_subplot(plot_number, 1, i + 1)
+            for i in range(plot_number)
+        ]
 
         bounds = np.arange(-9, 10, 1, dtype=int)
-        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+            "",
+            plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int))
+        )
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
 
         for k, ax in enumerate(self.model_canvas.axes_list):
-            # if X_og.shape != X.shape and not self.anomaly_check.isChecked():
             ax.plot(X_og, Y_og, label='Original Time Series', linewidth=1.4)
             ax.plot(X, Y, label='Time Series', linewidth=1.8)
-
             ax.plot(self.time[valid_rows], Y_model, label='Model', linewidth=1.8)
-            # ax.plot(X_slope, Y_slope, path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], label='Trend', linewidth=1.3)
+
             first = True
             for start, end in zip(segment_starts, segment_ends):
                 x_seg = X_slope[start:end]
                 y_seg = Y_slope[start:end]
                 if len(x_seg) == 0 or np.all(np.isnan(y_seg)):
                     continue
-                ax.plot(x_seg, y_seg, color='red', path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()], linewidth=1.3, label='Trend' if first else None)
+
+                ax.plot(
+                    x_seg,
+                    y_seg,
+                    color='red',
+                    path_effects=[pe.Stroke(linewidth=5, foreground='black'), pe.Normal()],
+                    linewidth=1.3,
+                    label='Trend' if first else None
+                )
                 first = False
+
             ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
-            ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
-            ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_model_boxes]))))
+            ax.text(
+                0.05, 0.95, trend_string,
+                transform=ax.transAxes,
+                fontsize=10,
+                verticalalignment='top',
+                horizontalalignment='left',
+                bbox=props
+            )
+
+            ax.set_title(
+                data.name + '\nat ' + ', '.join(
+                    f"{dim} {val}"
+                    for dim, val in zip(
+                        data.dim_array[1:],
+                        [combo.currentText() for combo in self.dim_model_boxes]
+                    )
+                )
+            )
+
         self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
         self.model_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
         self.model_canvas.figure.tight_layout()
@@ -3814,7 +3869,6 @@ def iup_reg_model(data, proxies, ini):
 
     X_string = X_1_string + X_2_string
     groups = get_string_groups(X_string)
-
     if check == 0:      # No averaging
         X_all = np.full((data.o3.shape + (len(X_string),)), np.nan, dtype='f4')
     elif check == 1:    # Yearly
@@ -3850,7 +3904,6 @@ def iup_reg_model(data, proxies, ini):
             for k, i in enumerate(data.inflection_index):
                 data.inflection_index[k] = np.where(np.unique(time.year) == time[i].year)[0][0]  # Change inflection point to reflect the yearly data
         time_log = [x + int(np.nanmean(month_index) - 1) for x in time_log]  # Set the time index in the middle of the year
-
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     data_all = np.empty(X_all.shape[:-1])
@@ -3917,7 +3970,6 @@ def iup_reg_model(data, proxies, ini):
             methods = ini['inflection_method']
             inf_idx = list(data.inflection_index)
             bounds = [0] + inf_idx + [len(nanmask)]
-
             for seg, method in enumerate(methods):
                 if method == 'gap':
                     start, end = bounds[seg], bounds[seg + 1]

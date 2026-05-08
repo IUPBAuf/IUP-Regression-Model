@@ -2512,9 +2512,24 @@ class AppWindow(QtWidgets.QMainWindow):
         print('brian@iup.physik.uni-bremen.de')
 
     def compute_trends(self):
-        self.setDisabled(True)
-        self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
-        self.setDisabled(False)
+        self.progressBar.setRange(0, 100)
+        self.progressBar.setValue(0)
+        self.progressBar.show()
+        QtWidgets.QApplication.processEvents()
+
+        def progress_cb(done, total):
+            if total > 0:
+                value = int(done * 100 / total)
+                self.progressBar.setValue(value)
+                QtWidgets.QApplication.processEvents()
+
+        try:
+            self.setDisabled(True)
+            self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini, progress_callback=progress_cb)
+            self.setDisabled(False)
+        finally:
+            self.progressBar.hide()
+        # self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
 
         self.X = diagnostic[0]
         self.beta = diagnostic[1]
@@ -3797,7 +3812,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         return np.array(trenda_z), np.array(siga_z), beta, betaa, np.array(covbetaa_z)
 
 
-def iup_reg_model(data, proxies, ini):
+def iup_reg_model(data, proxies, ini, progress_callback=None):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
     data = set_data_limits(data, ini)
 
@@ -3911,6 +3926,8 @@ def iup_reg_model(data, proxies, ini):
     seg_valid_all = np.empty(trenda_z.shape, dtype=int)
 
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
+    total = np.prod(data.o3[0, ...].shape)
+    done = 0
     it = np.nditer(data.o3[0, ...], flags=['multi_index'])
     while not it.finished:
         # print(str(it.multi_index) + ': calculating trend')
@@ -3927,7 +3944,12 @@ def iup_reg_model(data, proxies, ini):
                 coord_strings.append(f'Altitude {coord_val:.1f}')
             else:
                 coord_strings.append(f'{dim_name} {coord_val}')
-        print(f"{it.multi_index}: calculating trend ({', '.join(coord_strings)})")
+
+        done += 1
+        if progress_callback is not None and (done % 10 == 0 or done == total):
+            progress_callback(done, total)
+        elif progress_callback is None:
+            print(f"{it.multi_index}: calculating trend ({', '.join(coord_strings)})")
 
         data_arr = np.ma.masked_invalid(data.o3[(slice(None),) + it.multi_index])
         data_arr, seg_counts, seg_valid = filter_segment(data_arr, data, ini, min_fraction=ini.get('filter_fill_fraction', 0.70), min_internal_fraction=ini.get('filter_internal_fraction', 0.50), max_gap_length=ini.get('filter_max_gap_length', None), min_core_length=ini.get('filter_min_core_length', 0))

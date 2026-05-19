@@ -2461,10 +2461,15 @@ class AppWindow(QtWidgets.QMainWindow):
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
-        vmax = np.ceil(np.nanmax(np.abs(beta)) / 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))) * 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))
-        bounds = np.concatenate((np.arange(-vmax, 0, (vmax/7)), np.arange(0, vmax + (vmax/7), (vmax/7))))
+        # vmax = np.ceil(np.nanmax(np.abs(beta)) / 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))) * 10 ** np.floor(np.log10(np.nanmax(np.abs(beta))))
+        # bounds = np.concatenate((np.arange(-vmax, 0, (vmax/7)), np.arange(0, vmax + (vmax/7), (vmax/7))))
+        #
+        # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+        absmax = np.nanmax(np.abs(beta))
+        locator = mpl.ticker.MaxNLocator(nbins=14, symmetric=True)
+        bounds = locator.tick_values(-absmax, absmax)
 
-        norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+        norm = mpl.colors.TwoSlopeNorm(vmin=bounds[0], vcenter=0, vmax=bounds[-1])
 
         if self.proxy_con_alternative.isChecked() == True:
             cf = self.proxy_con_canvas.axes.imshow(beta, cmap=cmap, norm=norm, extent=[x_grid[0] + (x_grid[0]-x_grid[1])/2, x_grid[-1] + (x_grid[-1]-x_grid[-2])/2, y_grid[0] + (y_grid[0]-y_grid[1])/2, y_grid[-1] + (y_grid[-1]-y_grid[-2])/2], origin='lower', aspect='auto', alpha=0.7)
@@ -2476,7 +2481,18 @@ class AppWindow(QtWidgets.QMainWindow):
         if self.proxy_con_invert.isChecked() == True:
             self.proxy_con_canvas.axes.set_ylim(self.proxy_con_canvas.axes.get_ylim()[::-1])
         self.proxy_con_canvas.axes.tick_params(axis='both')
-        self.proxy_con_canvas.axes.set_title(self.proxy_con_combo.currentText() + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_con_boxes]))))
+        # self.proxy_con_canvas.axes.set_title(self.proxy_con_combo.currentText() + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_proxy_con_boxes]))))
+        title_parts = []
+
+        for dim, combo in zip(data.dim_array[1:], self.dim_proxy_con_boxes):
+            if combo.currentIndex() in [0, 1]:
+                continue
+            title_parts.append(f'{dim} {combo.currentText()}')
+        if title_parts:
+            title = f'{self.proxy_con_combo.currentText()} at ' + ', '.join(title_parts)
+        else:
+            title = self.proxy_con_combo.currentText()
+        self.proxy_con_canvas.axes.set_title(title)
         self.proxy_con_canvas.axes.set_xlabel(x_label, fontsize=14)
         self.proxy_con_canvas.axes.set_ylabel(y_label, fontsize=14)
 

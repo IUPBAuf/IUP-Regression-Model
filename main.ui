@@ -1451,13 +1451,6 @@
                 </widget>
                </item>
                <item>
-                <widget class="QCheckBox" name="proxy_con_uncertainty">
-                 <property name="text">
-                  <string>Uncertainty (2σ)</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
                 <widget class="QCheckBox" name="proxy_con_alternative">
                  <property name="text">
                   <string>Alternative Contour</string>

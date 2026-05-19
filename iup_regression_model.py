@@ -2230,12 +2230,15 @@ class AppWindow(QtWidgets.QMainWindow):
 
             this_indices = plot_indices + (idx,) if n_plots > 1 else plot_indices
 
-            if obs[this_indices].shape != (len(y_grid), len(x_grid)):
-                obs_plot = obs[this_indices].T
-                flags_plot = flags[this_indices]
-            else:
+            shape = obs[this_indices].shape
+            if shape == (len(y_grid), len(x_grid)):
                 obs_plot = obs[this_indices]
                 flags_plot = flags[this_indices]
+            elif shape == (len(x_grid), len(y_grid)):
+                obs_plot = obs[this_indices].T
+                flags_plot = flags[this_indices].T
+            else:
+                raise ValueError(f'Unexpected shape: {shape}')
 
             if self.cell_alternative.isChecked():
                 obs_plot_masked = np.ma.masked_where(obs_plot == 0, obs_plot)

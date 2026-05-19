@@ -1779,13 +1779,10 @@ class AppWindow(QtWidgets.QMainWindow):
             Y_trend = [Y_trend]
             Y_uncert = [Y_uncert]
 
-        Y_model = np.matmul(
-            self.X[indices][valid_rows][:, valid_cols],
-            np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0)
-        )
+        Y_model = np.matmul(self.X[indices][valid_rows][:, valid_cols], np.nan_to_num(self.betaa[tuple(plot_indices)][valid_cols], nan=0))
         X_model = np.array(self.time)[valid_rows]
 
-        common_time, idx_Y, idx_Y_model = np.intersect1d(X_og, X_model, return_indices=True)
+        common_time, idx_Y, idx_Y_model = np.intersect1d(X, X_model, return_indices=True)
         residuals = Y[idx_Y] - Y_model[idx_Y_model]
         rms = np.sqrt(np.nanmean(residuals ** 2))
         r2 = 1.0 - (np.nansum(residuals ** 2)) / (np.nansum((Y[idx_Y] - np.nanmean(Y[idx_Y])) ** 2))

@@ -2084,7 +2084,18 @@ class AppWindow(QtWidgets.QMainWindow):
                 ax.set_yscale('log')
 
         # one big title for the whole figure
-        fig.suptitle(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_con_boxes]))), fontsize=16)
+        # fig.suptitle(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_con_boxes]))), fontsize=16)
+        title_parts = []
+
+        for dim, combo in zip(data.dim_array[1:], self.dim_con_boxes):
+            if combo.currentIndex() in [0, 1]:
+                continue
+            title_parts.append(f'{dim} {combo.currentText()}')
+        if title_parts:
+            title = f'{data.name} at ' + ', '.join(title_parts)
+        else:
+            title = data.name
+        fig.suptitle(title, fontsize=16)
 
         # add colorbar to the last subplot
         divider = make_axes_locatable(axes[-1])
@@ -2296,7 +2307,17 @@ class AppWindow(QtWidgets.QMainWindow):
                 ax.set_yticklabels([])
                 ax.set_ylabel('')
 
-        fig.suptitle(data.name + ' – observations per segment', fontsize=16)
+        # fig.suptitle(data.name + ' – observations per segment', fontsize=16)
+        title_parts = []
+        for dim, combo in zip(data.dim_array[1:], self.dim_cell_boxes):
+            if combo.currentIndex() in [0, 1]:
+                continue
+            title_parts.append(f'{dim} {combo.currentText()}')
+        if title_parts:
+            title = f'{data.name}\nobservations per segment at ' + ', '.join(title_parts)
+        else:
+            title = f'{data.name}\nobservations per segment'
+        fig.suptitle(title, fontsize=16)
 
         divider = make_axes_locatable(axes[-1])
         cbar_ax = divider.append_axes("right", size="5%", pad=0.2)

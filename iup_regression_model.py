@@ -248,6 +248,24 @@ class VariableWindow(QtWidgets.QDialog):
                         row_layout.addItem(spacer)
                         line_time = QtWidgets.QLineEdit()
                         line_time.setText('%Y/%m')
+                        line_time.setToolTip('<html><head/><body>'
+                            '<p><b>Time format used to convert the time variable.</b></p>'
+                            '<p><u>Supported examples:</u><br>'
+                            '%Y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024<br>'
+                            '%Y/%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024/05<br>'
+                            '%Y-%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05<br>'
+                            '%Y%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 202405<br>'
+                            '%Y/%m/%d → 2024/05/19<br>'
+                            '%d.%m.%Y → 19.05.2024<br>'
+                            '%Y-%m-%d %H:%M:%S<br>'
+                            '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05-19 13:45:00'
+                            '</p>'
+                            '<p><u>NetCDF numeric time:</u><br>'
+                            'days since 2000-01-01<br>'
+                            'ds 2000-01-01'
+                            '</p>'
+                            '<p>If empty, automatic parsing will be attempted.</p>'
+                            '</body></html>')
                         row_layout.addWidget(line_time)
                         frame_layout.addWidget(row_widget)
             line.textChanged.connect(self.tag_change)
@@ -280,6 +298,24 @@ class VariableWindow(QtWidgets.QDialog):
             row_layout.addItem(spacer)
             line = QtWidgets.QLineEdit()
             line.setText('%Y/%m')
+            line.setToolTip('<html><head/><body>'
+                                 '<p><b>Time format used to convert the time variable.</b></p>'
+                                 '<p><u>Supported examples:</u><br>'
+                                 '%Y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024<br>'
+                                 '%Y/%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024/05<br>'
+                                 '%Y-%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05<br>'
+                                 '%Y%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 202405<br>'
+                                 '%Y/%m/%d → 2024/05/19<br>'
+                                 '%d.%m.%Y → 19.05.2024<br>'
+                                 '%Y-%m-%d %H:%M:%S<br>'
+                                 '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05-19 13:45:00'
+                                 '</p>'
+                                 '<p><u>NetCDF numeric time:</u><br>'
+                                 'days since 2000-01-01<br>'
+                                 'ds 2000-01-01'
+                                 '</p>'
+                                 '<p>If empty, automatic parsing will be attempted.</p>'
+                                 '</body></html>')
             row_layout.addWidget(line)
             self.sender().parent().parent().layout().addWidget(row_widget)
         else:
@@ -448,6 +484,24 @@ class ProxyWindow(QtWidgets.QDialog):
                         row_layout.addItem(spacer)
                         line_time = QtWidgets.QLineEdit()
                         line_time.setText('%Y/%m')
+                        line_time.setToolTip('<html><head/><body>'
+                                             '<p><b>Time format used to convert the time variable.</b></p>'
+                                             '<p><u>Supported examples:</u><br>'
+                                             '%Y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024<br>'
+                                             '%Y/%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024/05<br>'
+                                             '%Y-%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05<br>'
+                                             '%Y%m &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 202405<br>'
+                                             '%Y/%m/%d → 2024/05/19<br>'
+                                             '%d.%m.%Y → 19.05.2024<br>'
+                                             '%Y-%m-%d %H:%M:%S<br>'
+                                             '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 2024-05-19 13:45:00'
+                                             '</p>'
+                                             '<p><u>NetCDF numeric time:</u><br>'
+                                             'days since 2000-01-01<br>'
+                                             'ds 2000-01-01'
+                                             '</p>'
+                                             '<p>If empty, automatic parsing will be attempted.</p>'
+                                             '</body></html>')
                         row_layout.addWidget(line_time)
                         frame_layout.addWidget(row_widget)
             line.textChanged.connect(self.tag_change)
@@ -475,6 +529,8 @@ class ProxyWindow(QtWidgets.QDialog):
     def tag_change(self):
         line_text = self.sender().text()
         if line_text == 'time':
+            if self.sender().parent().parent().layout().count() > 3:
+                return
             row_widget = QtWidgets.QWidget()
             row_layout = QHBoxLayout(row_widget)
             label = QtWidgets.QLabel('Time format: ')
@@ -486,8 +542,16 @@ class ProxyWindow(QtWidgets.QDialog):
             row_layout.addWidget(line)
             self.sender().parent().parent().layout().addWidget(row_widget)
         else:
-            if self.sender().parent().parent().layout().itemAt(2):
-                self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(2).widget())
+            layout = self.sender().parent().parent().layout()
+            if layout.count() > 3:
+                item = layout.itemAt(3)
+                widget = item.widget()
+                if widget is not None:
+                    layout.removeWidget(widget)
+                    widget.deleteLater()
+        # else:
+        #     if self.sender().parent().parent().layout().itemAt(2):
+        #         self.sender().parent().parent().layout().removeWidget(self.sender().parent().parent().layout().itemAt(2).widget())
 
     def save_settings(self):
         # Saves all settings and closes the settings window

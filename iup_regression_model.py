@@ -1229,32 +1229,59 @@ class AppWindow(QtWidgets.QMainWindow):
         self.update_compute_button()
 
     def text_check(self):
-        # Changes the checkmarks if the format of the input is being recognized
-        check = averaging_window_text_check(str(self.sender().text()))
-        self.ini['averaging_window'] = str(self.sender().text())
-
+        sender = self.sender()
+        text = str(sender.text()).strip()
         months_str = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+        if text == '':
+            self.set_status(sender, 'empty')
+            self.ini.pop('averaging_window', None)
+            sender.setToolTip(
+                '<html><head/><body>'
+                '<p>Currently averaged months:</p>'
+                '<p>Months must be written with their respective number, '
+                'separated by ",". To get a yearly average, use either '
+                '"yearly" or "all".</p>'
+                '</body></html>')
+            self.update_compute_button()
+            return
+        check = averaging_window_text_check(text)
         if check == 0:
-            self.check_mean.setChecked(False)
-            self.check_mean.setPalette(self.palette_wrong)
-            self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
+            self.set_status(sender, 'invalid')
+            self.ini.pop('averaging_window', None)
+            sender.setToolTip(
+                '<html><head/><body>'
+                '<p>Currently averaged months:</p>'
+                '<p>Months must be written with their respective number, '
+                'separated by ",". To get a yearly average, use either '
+                '"yearly" or "all".</p>'
+                '</body></html>')
         else:
-            self.check_mean.setChecked(True)
-            self.check_mean.setPalette(self.palette_right)
+            self.set_status(sender, 'valid')
+            self.ini['averaging_window'] = text
             if check == 2:
-                month_list = re.split(r',\s*', str(self.sender().text()))
+                month_list = re.split(r',\s*', text)
                 month_list = np.array([int(num) for num in month_list])
-                string = [months_str[i-1] for i in month_list]
-                self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + ', '.join(string) + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
+                string = [months_str[i - 1] for i in month_list]
+                current_months = ', '.join(string)
             else:
-                self.mean_line.setToolTip('<html><head/><body><p>Currently averaged months:</p>' + 'all' + '</p><p>Months must be written with their respective number, seperated by &quot;,&quot;. To get a yearly average, use either &quot;yearly&quot; or &quot;all&quot;.</p></body></html>')
+                current_months = 'all'
+            sender.setToolTip(
+                '<html><head/><body>'
+                '<p>Currently averaged months:</p>'
+                f'<p>{current_months}</p>'
+                '<p>Months must be written with their respective number, '
+                'separated by ",". To get a yearly average, use either '
+                '"yearly" or "all".</p>'
+                '</body></html>')
             for row in range(self.frozen_list.rowCount()):
                 if int(self.frozen_list.cellWidget(row, 1).currentIndex()) >= 2:
                     self.frozen_list.cellWidget(row, 1).setCurrentIndex(1)
             for row in range(self.proxy_list.rowCount()):
                 if int(self.proxy_list.cellWidget(row, 1).currentIndex()) >= 2:
                     self.proxy_list.cellWidget(row, 1).setCurrentIndex(1)
+
+        self.update_compute_button()
 
     def method_update(self, methodBox, row):
         table = self.sender().parent().parent()
@@ -1274,7 +1301,7 @@ class AppWindow(QtWidgets.QMainWindow):
             else:
                 table.cellWidget(row, 2).setEnabled(False)
             # Reset the method to single method if the user also wants to average over the year
-            if self.check_mean.isChecked() == True and int(methodBox.currentIndex()) >= 2:
+            if self.mean_line.property('validation_state') == 'valid' and int(methodBox.currentIndex()) >= 2:
                 table.cellWidget(row, 1).setCurrentIndex(1)
 
     def seas_update(self, seasBox, row):

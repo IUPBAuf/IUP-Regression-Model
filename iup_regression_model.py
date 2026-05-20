@@ -1080,7 +1080,6 @@ class AppWindow(QtWidgets.QMainWindow):
         # Enables/Disables the date entry
         if self.infl_check.isChecked() == True:
             self.inflection_point.setEnabled(True)
-            # self.inflection_method.setEnabled(True)
             layout = self.inflection_widget.layout()
             if layout is None:
                 return
@@ -1091,12 +1090,10 @@ class AppWindow(QtWidgets.QMainWindow):
                     widget.setEnabled(True)
                 infl_string.append(infl_list[widget.currentIndex()])
             self.ini['inflection_method'] = ', '.join(infl_string)
-            # self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
             self.ini['inflection_point'] = self.inflection_point.text()
         else:
             self.inflection_point.setEnabled(False)
             self.ini.pop('inflection_point', None)
-            # self.inflection_method.setEnabled(False)
             layout = self.inflection_widget.layout()
             if layout is None:
                 return
@@ -1105,6 +1102,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 if isinstance(widget, QtWidgets.QComboBox):
                     widget.setEnabled(False)
             self.ini.pop('inflection_method', None)
+        self.update_compute_button()
 
     def anomaly_enable(self):
         if self.anomaly_check.isChecked() == True:
@@ -1139,34 +1137,96 @@ class AppWindow(QtWidgets.QMainWindow):
             layout.addWidget(box)
             self.inflection_boxes.append(box)
 
-    def format_check(self):
-        # Changes the checkmarks if the format of the date is being recongnized
-        checkbox = getattr(self, 'check_' + str(self.sender().objectName()).split('_')[0], None)
+    def set_status(self, field, state):
+        '''
+        state:
+            'valid'
+            'invalid'
+            'empty'
+        '''
 
-        if str(self.sender().text()) == '':
-            checkbox.setChecked(False)
-            checkbox.setPalette(self.palette_wrong)
-            self.ini.pop(self.sender().objectName(), None)
+        label = getattr(self, 'check_' + field.objectName().split('_')[0], None)
+        field.setProperty('validation_state', state)
+        if state == 'valid':
+            label.setText('✔')
+            label.setStyleSheet('color: rgb(0,170,0); font-weight: bold;')
+        elif state == 'invalid':
+            label.setText('✖')
+            label.setStyleSheet('color: rgb(212,19,22); font-weight: bold;')
+        else:
+            label.setText('')
+            label.setStyleSheet('')
+
+    def update_compute_button(self):
+        enabled = True
+        required_fields = [self.start_date, self.end_date]
+
+        for field in required_fields:
+            state = field.property('validation_state')
+            if state == 'invalid':
+                enabled = False
+                break
+
+        if enabled and self.infl_check.isChecked():
+            state = self.inflection_point.property('validation_state')
+            if state == 'invalid':
+                enabled = False
+            else:
+                infl_methods = []
+                for box in self.inflection_boxes:
+                    text = box.currentText()
+                    if text == 'Independent Trend':
+                        infl_methods.append('ind')
+                    elif text == 'Piece-wise Linear trend':
+                        infl_methods.append('pwl')
+                    elif text == 'Gap':
+                        infl_methods.append('gap')
+                unique_methods = set(infl_methods)
+                if unique_methods == {'gap'}:
+                    enabled = False
+                elif 'pwl' in unique_methods and len(unique_methods) > 1:
+                    enabled = False
+        self.compute_button.setEnabled(enabled)
+
+    def format_check(self):
+
+        sender = self.sender()
+        name = sender.objectName()
+        text = sender.text().strip()
+
+        if text == '':
+            self.set_status(sender, 'empty')
+            self.ini.pop(name, None)
+            self.update_compute_button()
             return
+
+        time = self.list_of_data[self.data_list.currentRow()].time
+        data_start = pd.to_datetime(time.min()).date()
+        data_end = pd.to_datetime(time.max()).date()
         try:
-            if self.sender().objectName() == 'inflection_point':
-                parts = [p.strip() for p in str(self.sender().text()).split(',')]
+            if name == 'inflection_point':
+                parts = [p.strip() for p in text.split(',')]
+                parsed_dates = []
                 for p in parts:
-                    dt.datetime.strptime(p, '%Y-%m')    # Raises an error and goes out of the try case, if not in the correct format
-                date_check = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
+                    date = dt.datetime.strptime(p, '%Y-%m').date()
+                    if not (data_start <= date <= data_end):
+                        raise ValueError
+                    parsed_dates.append(date)
+                if parsed_dates != sorted(parsed_dates):
+                    raise ValueError
+                if len(parsed_dates) != len(set(parsed_dates)):
+                    raise ValueError
                 self.update_inflection_boxes(len(parts) + 1)
             else:
-                date = pd.to_datetime(str(self.sender().text()), format='%Y-%m').date()
-
-            checkbox.setChecked(True)
-            checkbox.setPalette(self.palette_right)
-            self.ini[self.sender().objectName()] = str(self.sender().text())
-
-            # self.ini[self.sender().objectName()] = dt.datetime.strftime(dt.datetime.strptime(str(self.sender().text()), '%Y-%m'), '%Y-%m')
-        except:
-            checkbox.setChecked(False)
-            checkbox.setPalette(self.palette_wrong)
-            self.ini.pop(self.sender().objectName(), None)
+                date = pd.to_datetime(text, format='%Y-%m').date()
+                if not (data_start <= date <= data_end):
+                    raise ValueError
+            self.set_status(sender, 'valid')
+            self.ini[name] = text
+        except Exception:
+            self.set_status(sender, 'invalid')
+            self.ini.pop(name, None)
+        self.update_compute_button()
 
     def text_check(self):
         # Changes the checkmarks if the format of the input is being recognized
@@ -1360,6 +1420,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 widget.setEnabled(True)
             infl_string.append(infl_list[widget.currentIndex()])
         self.ini['inflection_method'] = ', '.join(infl_string)
+        self.update_compute_button()
 
     def data_change(self):
         # self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
@@ -3772,7 +3833,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     timok = list()
     comb_trend_col = np.array([np.nanmax(row[trend_string_index]) for row in X_clean])        # A combined column of all trend columns, for better comparison of consecutive values
     if inflection_index:
-        continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len([inflection_index]))]        # A list of indices at which the continuity will jump back to 1
+        continuity_jumps = [inflection_index[i] - sum(inflection_index[:i]) for i in range(len(inflection_index))]        # A list of indices at which the continuity will jump back to 1
     else:
         continuity_jumps = []
     jump_num = 0
@@ -3800,7 +3861,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         else:
             continue
 
-    Xmask2ok = Xmask2[0:k, :]
+    Xmask2ok = Xmask2[0:count, :]
 
     mult = 1
     if ini.get('anomaly', '') == 'True':
@@ -3813,6 +3874,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         mult *= 120
 
     # Calculate the trend coefficients
+    pwl_indices_used = []
     try:
         if len(beta) == 1 or len(Xmask2ok) < 10:
             trenda_z = [np.nan] * len(trend_string_index)
@@ -3850,6 +3912,13 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                     trenda_z.append(betaa[indices[0]] * mult)
                     siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
                     covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
+                    if 'pwl' in ini['inflection_method']:
+                        pwl_indices_used.append(indices[0])
+                        beta_sum = np.sum(betaa[pwl_indices_used])
+                        se_sum = np.sqrt(np.sum(covbetaa[np.ix_(pwl_indices_used, pwl_indices_used)]))
+                        trenda_z[-1] = beta_sum * mult
+                        siga_z[-1] = np.abs(beta_sum / se_sum)
+                        covbetaa_z[-1] = se_sum * mult
                 count += 1
             # if ini.get('anomaly', '') == 'True' and ini.get('anomaly_method', 'rel') == 'rel':
             #     print('NOT YET FINISHED')

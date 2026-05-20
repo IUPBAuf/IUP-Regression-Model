@@ -756,7 +756,6 @@ class AppWindow(QtWidgets.QMainWindow):
             for p in parts:
                 dt.datetime.strptime(p, '%Y-%m')
             date = ', '.join(dt.datetime.strptime(p, '%Y-%m').strftime('%Y-%m') for p in parts)
-
             self.inflection_point.setText(date)
         else:
             self.inflection_point.setText('YYYY-MM')
@@ -1193,7 +1192,6 @@ class AppWindow(QtWidgets.QMainWindow):
         sender = self.sender()
         name = sender.objectName()
         text = sender.text().strip()
-
         if text == '':
             self.set_status(sender, 'empty')
             self.ini.pop(name, None)
@@ -1226,6 +1224,8 @@ class AppWindow(QtWidgets.QMainWindow):
         except Exception:
             self.set_status(sender, 'invalid')
             self.ini.pop(name, None)
+            if name == 'inflection_point':
+                self.ini.pop('inflection_method', None)
         self.update_compute_button()
 
     def text_check(self):
@@ -1434,7 +1434,6 @@ class AppWindow(QtWidgets.QMainWindow):
             combo_box.setCurrentIndex(index)
 
     def inflection_method_change(self):
-        # self.ini['inflection_method'] = self.infl_method_list[self.inflection_method.currentIndex()]
         infl_list = ['ind', 'pwl', 'gap']
 
         layout = self.inflection_widget.layout()

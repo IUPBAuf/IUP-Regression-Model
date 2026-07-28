@@ -29,7 +29,8 @@ from PyQt5.QtCore import pyqtSignal, QTimer, Qt
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 # from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.10'
+ver = 'alpha 1.20'
+
 
 # Default class for proxies to be saved as
 class Proxy:
@@ -49,6 +50,7 @@ class Proxy:
         self.desc = ''          # Description of the merged Dataset
         self.method = 1         # Method on how to use this proxy in the model. 0: don't use this proxy; 1: use this proxy; 2: use this proxy harmonically; 3: use this proxy for year-of-the-month
         self.seas_comp = 2      # Number of seasonal components if used with the harmonic method
+
 
 # Default class for ozone data to be saved as
 class Dataset:
@@ -835,7 +837,7 @@ class AppWindow(QtWidgets.QMainWindow):
                 f.createDimension('n_coefficients', len(self.proxy_string))
                 f.createDimension('string_length', max_length)
                 f.createDimension('time', len(self.time))
-                f.createDimension('infl', len(self.current_ini['inflection_method']) - self.current_ini.get('inflection_method', '').count('gap'))
+                f.createDimension('infl', len(self.current_ini.get('inflection_method', '')) - self.current_ini.get('inflection_method', '').count('gap'))
 
                 ind_var = f.createVariable('independent_variable_names', 'str', ('n_coefficients',))
                 ind_var[:] = np.array(self.proxy_string)
@@ -849,6 +851,8 @@ class AppWindow(QtWidgets.QMainWindow):
                 X_var[:] = self.X
                 beta_var = f.createVariable('beta', 'f4', dim_tuple[1:] + ('n_coefficients',), compression="zlib")
                 beta_var[:] = self.betaa
+                beta_unc_var = f.createVariable('beta_uncertainty', 'f4', dim_tuple[1:] + ('n_coefficients',), compression='zlib')
+                beta_unc_var[:] = self.beta_unc
                 og_ozone = f.createVariable('ozone_time_series', 'f4', dim_tuple, compression="zlib")
                 og_ozone[:] = self.trend_data
 
@@ -867,6 +871,7 @@ class AppWindow(QtWidgets.QMainWindow):
 
                 X_var.long_name = 'Independent Variable matrix'
                 beta_var.long_name = 'Fit Parameters'
+                beta_unc_var.long_name = 'Fit Parameter Uncertainties'
                 og_ozone.long_name = 'Original Ozone Time Series'
                 og_ozone.unit = self.current_ini.get("o3_var_unit", "")
 
@@ -1449,9 +1454,10 @@ class AppWindow(QtWidgets.QMainWindow):
         self.update_compute_button()
 
     def data_change(self):
-        # self.ini['time_format'] = self.list_of_data[self.data_list.currentRow()].time_format
-
         self.populate_dim_limits()
+        # Simuliere eine textänderung, damit format_check aufgerufen wird und checkmarks setzte/den compute Knopf de/aktiviert
+        for widget in [self.start_date, self.end_date, self.inflection_point]:
+            widget.textChanged.emit(widget.text())
 
     def clear_dim_widgets(self, layout):
         if layout is not None:
@@ -2718,11 +2724,10 @@ class AppWindow(QtWidgets.QMainWindow):
         finally:
             self.progressBar.hide()
         # self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
-
         self.X = diagnostic[0]
         self.beta = diagnostic[1]
         self.betaa = diagnostic[2]
-        self.covbeta = diagnostic[3]
+        self.beta_unc = diagnostic[3]
         self.proxy_string = diagnostic[4]
         self.time = diagnostic[5]
         self.trend_data = diagnostic[6]
@@ -3179,8 +3184,8 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
 
 def get_string_groups(string_list):
     # This function will look into a list of strings and create a dictionary with different groups and their respective indices of the original list
-    pattern_group = re.compile(r'(intercept|trend) #(\d+)')
-    pattern_no_group = re.compile(r'(intercept|trend)')
+    pattern_group = re.compile(r'^(intercept|independent trend|piece-wise linear trend|trend) #(\d+)\b')
+    pattern_no_group = re.compile(r'^(intercept|gap)\b')
 
     groups = {}
     attribute_list = ['single', 'harmonic', 'month-of-the-year']
@@ -3247,8 +3252,15 @@ def load_default_proxies(ini):
 
     proxy_raw = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), path), sep='\s+', index_col=0)
     proxy_raw.dropna(axis=1, how='all', inplace=True)
-    proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
-    proxy_raw = proxy_raw.drop('Month', axis=1)
+    # proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
+    # proxy_raw = proxy_raw.drop('Month', axis=1)
+    if "Month" in proxy_raw.columns:
+        year = proxy_raw.index.astype(int)
+        month = proxy_raw["Month"].astype(int)
+        proxy_raw.index = pd.to_datetime({"year": year, "month": month, "day": 15})
+        proxy_raw.drop(columns="Month", inplace=True)
+    else:
+        proxy_raw.index = proxy_raw.index.to_series().apply(parse_time)
 
     # Convert raw data to the proxy class
     proxy_list = proxies_to_class(proxy_raw)
@@ -3804,15 +3816,15 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     # Get the indices of the intercept and trend to get a mean value for the coefficient
     trend_string_index = [j for j, s in enumerate(X_string) if 'trend' in s]
     groups = get_string_groups(X_string)
-
     try:
         beta = np.linalg.inv(X_clean.T @ X_clean) @ X_clean.T @ data_arr[nanmask]
     except:
         print('Calculation failed: NaNs')
-        return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, [np.nan] * len(trend_string_index)
+        return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        # return [np.nan] * len(trend_string_index), [np.nan] * len(trend_string_index), np.nan, np.nan, [np.nan] * len(trend_string_index)
 
     if len(trend_string_index) == 0:
-        return (np.nan, np.nan, beta, beta, np.nan)
+        return (np.nan, np.nan, beta, beta, np.nan, np.nan)
 
     # Carlo's autoregression
     fity = np.matmul(X_clean, beta)
@@ -3852,7 +3864,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         covbetaa = np.var(epsilon) * (np.linalg.inv(np.matmul(np.transpose(Xstar), Xstar)))
     except:
         print('Two or more proxies are dependent to each other. A linear regression is not possible. Please either turn of linear regression or turn off one of the proxies.')
-        return np.nan, np.nan, np.nan, np.nan, np.nan
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     Xmask2, Ymask2 = np.zeros((len(X_clean), X_clean.shape[1])), np.zeros((len(X_clean)))
     count = 0
@@ -3890,7 +3902,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
     Xmask2ok = Xmask2[0:count, :]
 
     mult = 1
-    if ini.get('anomaly', '') == 'True':
+    if ini.get('anomaly', '') == 'False':
         mult *= 1
     else:
         mult *= 100 / np.nanmean(data_arr)
@@ -4003,9 +4015,9 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         print('Failed to calculate the trend and significants')
 
     if len(trenda_z) == 1:
-        return trenda_z.pop(), siga_z.pop(), beta, betaa, covbetaa_z.pop()
+        return trenda_z.pop(), siga_z.pop(), beta, betaa, covbetaa_z.pop(), np.sqrt(np.diag(covbetaa))
     else:
-        return np.array(trenda_z), np.array(siga_z), beta, betaa, np.array(covbetaa_z)
+        return np.array(trenda_z), np.array(siga_z), beta, betaa, np.array(covbetaa_z), np.sqrt(np.diag(covbetaa))
 
 
 def iup_reg_model(data, proxies, ini, progress_callback=None):
@@ -4117,6 +4129,7 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
         time_log = [x + int(np.nanmean(month_index) - 1) for x in time_log]  # Set the time index in the middle of the year
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+    beta_unc_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     data_all = np.empty(X_all.shape[:-1])
     seg_counts_all = np.empty(trenda_z.shape)
     seg_valid_all = np.empty(trenda_z.shape, dtype=int)
@@ -4230,21 +4243,22 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
         col_mask = np.isnan(X).all(axis=0)
         X_clean = X[~row_mask][:, ~col_mask]
         X_clean[np.isnan(X_clean)] = 0
-
         # Calculation of the trends and uncertainties for each cell
-        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index] = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
+
+        trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index], beta_unc = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa
         X_all[(slice(None),) + it.multi_index + (slice(None),)][np.ix_(~row_mask, ~col_mask)] = X_clean
 
         beta_all[it.multi_index + (slice(None),)][~col_mask] = beta
         betaa_all[it.multi_index + (slice(None),)][~col_mask] = betaa
+        beta_unc_all[it.multi_index + (slice(None),)][~col_mask] = beta_unc
         data_all[(slice(None),) + it.multi_index] = data_arr.filled(np.nan)
         seg_counts_all[it.multi_index] = seg_counts
         seg_valid_all[it.multi_index] = seg_valid
         # Go to next iteration:
         it.iternext()
-    diagnostic = [X_all, beta_all, betaa_all, data.dim_array, X_string, data.time[time_log], data_all, covbetaa_z, seg_counts_all, seg_valid_all]
+    diagnostic = [X_all, beta_all, betaa_all, beta_unc_all, X_string, data.time[time_log], data_all, covbetaa_z, seg_counts_all, seg_valid_all, data.dim_array]
     return trenda_z, siga_z, diagnostic
 
 

@@ -330,9 +330,9 @@
                      <number>0</number>
                     </property>
                     <item>
-                     <widget class="QRadioButton" name="radio_rel">
+                     <widget class="QRadioButton" name="radio_abs">
                       <property name="text">
-                       <string>Relative</string>
+                       <string>Absolute</string>
                       </property>
                       <property name="checked">
                        <bool>true</bool>
@@ -340,12 +340,9 @@
                      </widget>
                     </item>
                     <item>
-                     <widget class="QRadioButton" name="radio_abs">
+                     <widget class="QRadioButton" name="radio_rel">
                       <property name="text">
-                       <string>Absolute</string>
-                      </property>
-                      <property name="checked">
-                       <bool>false</bool>
+                       <string>Relative</string>
                       </property>
                      </widget>
                     </item>

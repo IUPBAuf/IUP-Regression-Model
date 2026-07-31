@@ -21,6 +21,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+import traceback
 from statsmodels.stats.stattools import durbin_watson
 
 from PyQt5 import QtWidgets, uic
@@ -2011,7 +2012,6 @@ class AppWindow(QtWidgets.QMainWindow):
         times_arr = np.array(self.time[valid_rows])
 
         segment_starts = [0]
-        segment_ends = []
 
         if inflection_dates:
             inflection_points = []
@@ -2042,16 +2042,10 @@ class AppWindow(QtWidgets.QMainWindow):
             Y_slope = Y_slope_extended
 
         plot_number = 1
-        self.model_canvas.axes_list = [
-            self.model_canvas.figure.add_subplot(plot_number, 1, i + 1)
-            for i in range(plot_number)
-        ]
+        self.model_canvas.axes_list = [self.model_canvas.figure.add_subplot(plot_number, 1, i + 1) for i in range(plot_number)]
 
         bounds = np.arange(-9, 10, 1, dtype=int)
-        cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
-            "",
-            plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int))
-        )
+        cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", plt.get_cmap('RdBu_r')(np.arange(10, 245, 3).astype(int)))
         cmap.set_under(plt.get_cmap('RdBu_r')(0))
         cmap.set_over(plt.get_cmap('RdBu_r')(255))
         norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
@@ -2081,24 +2075,9 @@ class AppWindow(QtWidgets.QMainWindow):
             ax.legend(loc='upper right')
 
             props = dict(boxstyle='round', facecolor='white', alpha=1)
-            ax.text(
-                0.05, 0.95, trend_string,
-                transform=ax.transAxes,
-                fontsize=10,
-                verticalalignment='top',
-                horizontalalignment='left',
-                bbox=props
-            )
+            ax.text(0.05, 0.95, trend_string, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
 
-            ax.set_title(
-                data.name + '\nat ' + ', '.join(
-                    f"{dim} {val}"
-                    for dim, val in zip(
-                        data.dim_array[1:],
-                        [combo.currentText() for combo in self.dim_model_boxes]
-                    )
-                )
-            )
+            ax.set_title(data.name + '\nat ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], [combo.currentText() for combo in self.dim_model_boxes])))
 
         self.model_canvas.axes_list[0].set_xlabel('Time [yr]', fontsize=14)
         self.model_canvas.axes_list[0].set_ylabel(self.current_ini.get('o3_var_unit', ''), fontsize=14)
@@ -2241,7 +2220,6 @@ class AppWindow(QtWidgets.QMainWindow):
                 ax.set_yscale('log')
 
         # one big title for the whole figure
-        # fig.suptitle(data.name + ' at ' + ', '.join(f"{dim} {val}" for dim, val in zip(data.dim_array[1:], list([combo.currentText() for combo in self.dim_con_boxes]))), fontsize=16)
         title_parts = []
 
         for dim, combo in zip(data.dim_array[1:], self.dim_con_boxes):
@@ -2717,13 +2695,23 @@ class AppWindow(QtWidgets.QMainWindow):
                 self.progressBar.setValue(value)
                 QtWidgets.QApplication.processEvents()
 
+        self.setDisabled(True)
+
         try:
-            self.setDisabled(True)
             self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini, progress_callback=progress_cb)
-            self.setDisabled(False)
+        except Exception:
+            tb = traceback.format_exc()
+            msg = QtWidgets.QMessageBox(self)
+            msg.setIcon(QtWidgets.QMessageBox.Critical)
+            msg.setWindowTitle("Regression Error")
+            msg.setText("An error occurred while computing the trends.")
+            msg.setDetailedText(tb)
+            msg.exec()
+            return
         finally:
+            self.setDisabled(False)
             self.progressBar.hide()
-        # self.trends, self.signi, diagnostic = iup_reg_model(self.list_of_data[self.data_list.currentRow()], self.proxies, self.ini)
+
         self.X = diagnostic[0]
         self.beta = diagnostic[1]
         self.betaa = diagnostic[2]
@@ -2734,6 +2722,7 @@ class AppWindow(QtWidgets.QMainWindow):
         self.uncertainty = diagnostic[7]
         self.obs_counts = diagnostic[8]
         self.obs_valid = diagnostic[9]
+
         self.current_ini = copy.copy(self.ini)
         self.current_data = copy.deepcopy(self.list_of_data[self.data_list.currentRow()])
         self.current_data = set_data_limits(self.current_data, self.current_ini)

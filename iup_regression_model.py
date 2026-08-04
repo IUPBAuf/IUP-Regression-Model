@@ -1653,6 +1653,9 @@ class AppWindow(QtWidgets.QMainWindow):
             h_layout.addLayout(vbox2)
 
             main_layout.addWidget(widget)
+        for dim, (combo1, combo2) in self.combo_pairs.items():
+            dim_index = data.dim_array.index(dim)
+            self.ini['additional_var_' + str(dim_index + 1) + '_limit'] = (str(combo1.currentIndex()) + ', ' + str(combo2.currentIndex()))
 
     def sync_combo_boxes(self, var_string):
         # Get the indices of all combo boxes
@@ -4012,7 +4015,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
 def iup_reg_model(data, proxies, ini, progress_callback=None):
     data, proxies = get_proxy_time_overlap(ini, proxies, data)
     data = set_data_limits(data, ini)
-
     # Get index of the inflection point
     data.inflection_index = get_inflection_index(ini, data)
 
@@ -4122,7 +4124,6 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
     data_all = np.empty(X_all.shape[:-1])
     seg_counts_all = np.empty(trenda_z.shape)
     seg_valid_all = np.empty(trenda_z.shape, dtype=int)
-
     # Looping over every dimension but the first (time), to calculate the trends for every latitude, longitude and altitude
     total = np.prod(data.o3[0, ...].shape)
     done = 0

@@ -3175,46 +3175,50 @@ def filter_segment(data_arr, data, ini, min_fraction=0.7, min_internal_fraction=
 
 
 def get_string_groups(string_list):
-    # This function will look into a list of strings and create a dictionary with different groups and their respective indices of the original list
     pattern_group = re.compile(r'^(intercept|independent trend|piece-wise linear trend|trend) #(\d+)\b')
-    pattern_no_group = re.compile(r'^(intercept|gap)\b')
-
+    pattern_no_group = re.compile(r'^(intercept gap|intercept|trend|gap)\b')
     groups = {}
     attribute_list = ['single', 'harmonic', 'month-of-the-year']
 
     for k, i in enumerate(string_list):
-        match = pattern_group.search(i)
         index = [kk for kk, s in enumerate(attribute_list) if s in i]
-        if index:
-            index = index[0]  # Only take the first match
+        index = index[0] if index else None
+
+        if index is None:
+            continue
+
+        first_part = i.split(' - ')[0]
+        match = pattern_group.match(first_part)
+
+        if match:
+            type_ = match.group(1)
+            number = int(match.group(2))
+
+            if type_ in ('independent trend', 'piece-wise linear trend', 'trend'):
+                type_ = 'trend'
+
+            key = (type_, attribute_list[index], number)
+
         else:
-            index = None
+            match = pattern_no_group.match(first_part)
 
-        if index is not None:
-            if match and attribute_list[index] in i:
+            if match:
                 type_ = match.group(1)
-                number = int(match.group(2))
-                key = (type_, attribute_list[index], number)
-                if key not in groups:
-                    groups[key] = []
-                groups[key].append(k)
-            else:
-                match = pattern_no_group.search(i)
-                if match and attribute_list[index] in i:
-                    type_ = match.group(1)
-                    key = (type_, attribute_list[index], None)
-                    if key not in groups:
-                        groups[key] = []
-                    groups[key].append(k)
-                else:
-                    # Does not match either "trend" or "intercept" -> proxy
-                    parts = i.split(' - ')
-                    name, attribute, number = parts[:3]
 
-                    key = ('proxy', attribute_list[index], None, name)
-                    if key not in groups:
-                        groups[key] = []
-                    groups[key].append(k)
+                if type_ in ('intercept gap', 'gap'):
+                    type_ = 'intercept'
+
+                key = (type_, attribute_list[index], None)
+
+            else:
+                parts = i.split(' - ')
+                name, attribute, number = parts[:3]
+                key = ('proxy', attribute_list[index], None, name)
+
+        if key not in groups:
+            groups[key] = []
+
+        groups[key].append(k)
     return groups
 
 
@@ -3856,7 +3860,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
         covbetaa = np.var(epsilon) * (np.linalg.inv(np.matmul(np.transpose(Xstar), Xstar)))
     except:
         print('Two or more proxies are dependent to each other. A linear regression is not possible. Please either turn of linear regression or turn off one of the proxies.')
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        return np.nan, np.nan, beta, beta, np.nan, np.nan
 
     Xmask2, Ymask2 = np.zeros((len(X_clean), X_clean.shape[1])), np.zeros((len(X_clean)))
     count = 0
@@ -3916,6 +3920,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
             covbetaa_z = []
 
             count = 1
+            print(groups)
             for keys, indices in groups.items():
                 if keys[0] == 'intercept' or keys[0] == 'proxy':
                     continue
@@ -3930,6 +3935,7 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                     covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
                 else:
                     if keys[-1] is None:    # If no inflection point
+                        print(indices)
                         trenda_z.append(betaa[indices[0]] * mult)
                         siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
                         covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
@@ -4121,6 +4127,7 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     beta_unc_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
+    print(betaa_all.shape)
     data_all = np.empty(X_all.shape[:-1])
     seg_counts_all = np.empty(trenda_z.shape)
     seg_valid_all = np.empty(trenda_z.shape, dtype=int)
@@ -4234,7 +4241,6 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
         X_clean = X[~row_mask][:, ~col_mask]
         X_clean[np.isnan(X_clean)] = 0
         # Calculation of the trends and uncertainties for each cell
-
         trenda_z[it.multi_index], siga_z[it.multi_index], beta, betaa, covbetaa_z[it.multi_index], beta_unc = calc_trend(X_clean, data_arr, nanmask, ini, np.array(X_string)[~np.all(np.isnan(X), axis=0)], data.inflection_index)
 
         # Save X, beta and betaa

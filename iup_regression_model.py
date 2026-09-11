@@ -30,7 +30,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer, Qt
 from PyQt5.QtWidgets import QTableWidgetItem, QVBoxLayout, QHBoxLayout, QHeaderView, QFileDialog, QMessageBox
 # from regression_model_ui import Ui_MainWindow
 
-ver = 'alpha 1.20'
+ver = 'alpha 1.30'
 
 
 # Default class for proxies to be saved as
@@ -3920,7 +3920,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
             covbetaa_z = []
 
             count = 1
-            print(groups)
             for keys, indices in groups.items():
                 if keys[0] == 'intercept' or keys[0] == 'proxy':
                     continue
@@ -3935,7 +3934,6 @@ def calc_trend(X_clean, data_arr, nanmask, ini, X_string, inflection_index):
                     covbetaa_z.append(np.sqrt(np.nanmean(np.diag(covbetaa)[indices])) * mult)
                 else:
                     if keys[-1] is None:    # If no inflection point
-                        print(indices)
                         trenda_z.append(betaa[indices[0]] * mult)
                         siga_z.append(np.abs(betaa[indices[0]] / np.sqrt(np.diag(covbetaa)[indices[0]])))
                         covbetaa_z.append(np.sqrt(np.diag(covbetaa)[indices[0]]) * mult)
@@ -4127,7 +4125,6 @@ def iup_reg_model(data, proxies, ini, progress_callback=None):
     beta_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     betaa_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
     beta_unc_all = np.empty((data.o3[0, ...].shape + (len(X_string),)), dtype='f4') * np.nan
-    print(betaa_all.shape)
     data_all = np.empty(X_all.shape[:-1])
     seg_counts_all = np.empty(trenda_z.shape)
     seg_valid_all = np.empty(trenda_z.shape, dtype=int)

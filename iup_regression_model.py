@@ -22,7 +22,6 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
 import traceback
-from statsmodels.stats.stattools import durbin_watson
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QPalette, QColor, QIcon
@@ -762,6 +761,20 @@ class AppWindow(QtWidgets.QMainWindow):
             self.inflection_point.setText(date)
         else:
             self.inflection_point.setText('YYYY-MM')
+
+        if 'inflection_method' in self.ini and self.inflection_boxes:
+            method_map = {'ind': 0, 'pwl': 1, 'gap': 2}
+            methods = [m.strip().lower() for m in self.ini['inflection_method'].split(',')]
+            if len(methods) == 1:
+                index = method_map.get(methods[0])
+                if index is not None:
+                    for box in self.inflection_boxes:
+                        box.setCurrentIndex(index)
+            elif len(methods) == len(self.inflection_boxes):
+                for box, method in zip(self.inflection_boxes, methods):
+                    index = method_map.get(method)
+                    if index is not None:
+                        box.setCurrentIndex(index)
 
         if 'inflection_point' in self.ini and 'inflection_method' in self.ini:
             self.infl_check.setChecked(True)
@@ -4309,4 +4322,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui(ui=True)
+    iup_ui()

@@ -144,6 +144,29 @@ class VariableWindow(QtWidgets.QDialog):
         self.ini = settings_ini
         self.data = nc.Dataset(filename[0], 'r')
 
+        # Default: use root dataset
+        self.data_source = self.data
+
+        # Set up group selection
+        self.group_combo.clear()
+
+        group_names = list(self.data.groups.keys())
+
+        if group_names:
+            self.group_combo.setEnabled(True)
+            # Add root as an option if it contains variables
+            if self.data.variables:
+                self.group_combo.addItem('-Root-')
+            # Add available groups
+            self.group_combo.addItems(group_names)
+            # Use the first group by default if root has no variables
+            if not self.data.variables:
+                self.group_combo.setCurrentIndex(0)
+                self.data_source = self.data.groups[group_names[0]]
+            self.group_combo.currentTextChanged.connect(self.change_group)
+        else:
+            self.group_combo.setEnabled(False)
+
         self.load_variable_keys()
 
         self.dim_layout = self.findChild(QtWidgets.QWidget, 'variable_stacked_widget').layout()
@@ -174,10 +197,10 @@ class VariableWindow(QtWidgets.QDialog):
             self.clear_dim_widget()
             return
 
-        dims = self.data.variables[self.o3_var_combo.currentText()].dimensions
+        dims = self.data_source.variables[self.o3_var_combo.currentText()].dimensions
 
-        o3_ln = getattr(self.data.variables[self.o3_var_combo.currentText()], 'long_name', getattr(self.data.variables[self.o3_var_combo.currentText()], 'name', ''))
-        o3_units = getattr(self.data.variables[self.o3_var_combo.currentText()], 'units', '')
+        o3_ln = getattr(self.data_source.variables[self.o3_var_combo.currentText()], 'long_name', getattr(self.data_source.variables[self.o3_var_combo.currentText()], 'name', ''))
+        o3_units = getattr(self.data_source.variables[self.o3_var_combo.currentText()], 'units', '')
         if o3_ln or o3_units:
             self.o3_unit.setText(o3_ln + ' [' + o3_units + ']')
 
@@ -217,8 +240,8 @@ class VariableWindow(QtWidgets.QDialog):
             row_layout.addItem(spacer)
             unit_line = QtWidgets.QLineEdit()
             try:
-                ln = getattr(self.data.variables[i], 'long_name', getattr(self.data.variables[i], 'name', ''))
-                units = getattr(self.data.variables[i], 'units', '')
+                ln = getattr(self.data_source.variables[i], 'long_name', getattr(self.data_source.variables[i], 'name', ''))
+                units = getattr(self.data_source.variables[i], 'units', '')
                 if ln or units:
                     unit_line.setText(ln + ' [' + units + ']')
             except:
@@ -274,8 +297,22 @@ class VariableWindow(QtWidgets.QDialog):
 
             self.dim_layout.addWidget(frame)
 
+    def change_group(self, group_name):
+
+        if group_name == '-Root-':
+            self.data_source = self.data
+        else:
+            self.data_source = self.data.groups[group_name]
+
+        self.o3_var_combo.blockSignals(True)
+        self.o3_var_combo.clear()
+        self.o3_var_combo.blockSignals(False)
+
+        self.clear_dim_widget()
+        self.load_variable_keys()
+
     def load_variable_keys(self):
-        self.o3_keys = list(self.data.variables.keys())
+        self.o3_keys = list(self.data_source.variables.keys())
         self.o3_keys.insert(0, '-None-')
         self.o3_var_combo.addItems(self.o3_keys)
 
@@ -284,8 +321,8 @@ class VariableWindow(QtWidgets.QDialog):
         var_name = self.sender().currentText()
 
         if self.sender().parent():
-            ln = getattr(self.data.variables[var_name], 'long_name', getattr(self.data.variables[var_name], 'name', ''))
-            units = getattr(self.data.variables[var_name], 'units', '')
+            ln = getattr(self.data_source.variables[var_name], 'long_name', getattr(self.data_source.variables[var_name], 'name', ''))
+            units = getattr(self.data_source.variables[var_name], 'units', '')
             if ln or units:
                 self.sender().parent().parent().layout().itemAt(1).widget().layout().itemAt(2).widget().setText(ln + ' [' + units + ']')
 
@@ -326,7 +363,13 @@ class VariableWindow(QtWidgets.QDialog):
 
     def save_settings(self):
         # Saves all settings and closes the settings window
-
+        if self.group_combo.isEnabled():
+            if self.group_combo.currentText() == '-Root-':
+                self.ini['group_name'] = None
+            else:
+                self.ini['group_name'] = self.group_combo.currentText()
+        else:
+            self.ini['group_name'] = None
         # Change ini
         if self.o3_var_combo.currentIndex() != 0:
             self.ini['o3_var'] = self.o3_var_combo.currentText()
@@ -735,6 +778,7 @@ class AppWindow(QtWidgets.QMainWindow):
         # Menu button connection
         self.menu_help.triggered.connect(self.print_ini)
         self.menu_load_data.triggered.connect(self.open_data_dialog)
+        self.menu_load_folder.triggered.connect(self.open_data_folder_dialog)
         self.menu_load_proxy.triggered.connect(self.open_proxy_dialog)
         self.menu_save.triggered.connect(self.save_file)
         self.menu_save_plot.triggered.connect(self.save_plot)
@@ -1004,10 +1048,53 @@ class AppWindow(QtWidgets.QMainWindow):
     def sync_frozen_to_main(self, logical_index, old_size, new_size):
         self.proxy_list.horizontalHeader().resizeSection(logical_index, new_size)
 
+    def open_data_folder_dialog(self):
+
+        folder = QFileDialog.getExistingDirectory(self, 'Select NetCDF data folder')
+
+        if not folder:
+            return
+
+        files = sorted(os.path.join(folder, filename) for filename in os.listdir(folder) if filename.lower().endswith('.nc') or filename.lower().endswith('.nc4'))
+
+        if not files:
+            QMessageBox.warning(self, 'No NetCDF files', 'The selected folder contains no NetCDF files.')
+            return
+        # ------------------------------------------------------------
+        # Use the first file for the variable/settings dialog
+        # ------------------------------------------------------------
+        print('Files before settings:', files)
+
+        accepted = self.open_data_settings_dialog([files[0]])
+
+        print('Settings accepted:', accepted)
+        print('Files after settings:', files)
+
+        if not accepted:
+            return
+
+        # ------------------------------------------------------------
+        # Load and merge the complete folder
+        # ------------------------------------------------------------
+
+        try:
+
+            data = load_netCDF_folder(folder, self.ini)
+
+        except Exception as e:
+
+            QMessageBox.critical(self, 'Error loading data', str(e))
+
+            return
+
+        if data is not None:
+            self.list_of_data.append(data)
+            self.reload_data_list()
+
     def open_data_dialog(self):
         dialog = QFileDialog(self)
         dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
-        dialog.setNameFilters(["NetCDF (*.nc)", "ASCII files (*.*)"])
+        dialog.setNameFilters(["NetCDF (*.nc *.nc4)", "ASCII files (*.*)"])
         dialog.setViewMode(QFileDialog.Detail)
 
         if dialog.exec_():
@@ -2933,6 +3020,7 @@ def get_proxy_time_overlap(ini, proxies, data):
 
         mask = mask[start_idx:]  # boolean mask for the tail
         temp = arr[start_idx:][mask]  # values extracted (masked)
+        temp = np.ma.filled(temp, np.nan).astype(float)
 
         if arr.ndim == 1:
             vmin, vmax = np.nanmin(temp), np.nanmax(temp)
@@ -2950,12 +3038,10 @@ def get_proxy_time_overlap(ini, proxies, data):
                 if vmax > vmin:
                     if 'aod' not in p.name.lower():
                         norm = (sub_masked - np.nanmean(sub_masked)) / np.nanstd(sub_masked)
-                        # norm = (sub_masked - vmin) / (vmax - vmin)
-                        # norm = norm - 0.5
+                        # norm = (sub_masked - np.nanmin(sub_masked)) / (np.nanmax(sub_masked) - np.nanmin(sub_masked)) - 0.5
                     else:
                         sub_masked[sub_masked == 0] = np.nan
                         norm = (sub_masked - np.nanmin(sub_masked)) / (vmax - np.nanmin(sub_masked))
-                        # norm = norm - 0.5
                     sub[(mask,) + idx] = norm
         arr[start_idx:] = sub
 
@@ -3041,44 +3127,74 @@ def parse_time(value, month=None, format=None):
     # If there is a month value, combine value (year) and month to one string
     if month:
         return dt.date(int(value), int(month), 15)
-        # value = dt.date(int(value), int(month), 15).strftime('%Y-%m')
 
+    # Convert input to string first
+    value = str(value).strip()
+
+    # If an explicit format is given, try it first
     if format:
         try:
-            dt.datetime.strptime(value, format).date()
-        except:
-            print('The format did not work with the loaded time data. The IUP Regression Model will try to find a working format. Please check if the date is shown correctly afterwards.')
+            return dt.datetime.strptime(value, format).date()
+        except (ValueError, TypeError):
+            print(
+                'The format did not work with the loaded time data. '
+                'The IUP Bremen Regression Model will try to find a working format. '
+                'Please check if the date is shown correctly afterwards.'
+            )
 
-    # Convert value to string
-    if float(value) - int(value) == 0:
-        value = int(value)
-    value = str(value)
+    # Check for string formats with year, month, and day
+    # e.g. 1979-01-01, 1979_01_01, 1979/01/01
+    if re.match(r"^\d{4}[-_/]\d{2}[-_/]\d{2}$", value):
+        if '-' in value:
+            return dt.datetime.strptime(value, "%Y-%m-%d").date()
+        elif '_' in value:
+            return dt.datetime.strptime(value, "%Y_%m_%d").date()
+        else:
+            return dt.datetime.strptime(value, "%Y/%m/%d").date()
 
-    # Check for fractional year (e.g., 1997.0145)
-    if re.match(r"^\d{4}\.\d+$", value):
-        year = int(value[:4])
-        fractional_year = float(value)
-        start_of_year = dt.datetime(year, 1, 1)
-        year_fraction = fractional_year - year
-        days_in_year = 366 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 365
-        result_date = start_of_year + dt.timedelta(days=year_fraction * days_in_year)
-        return result_date.date()
+    # Check for string formats with year and month
+    # e.g. 1979-01, 1979_01, 1979/01
+    elif re.match(r"^\d{4}[-_/]\d{2}$", value):
+        if '-' in value:
+            return dt.datetime.strptime(value, "%Y-%m").date()
+        elif '_' in value:
+            return dt.datetime.strptime(value, "%Y_%m").date()
+        else:
+            return dt.datetime.strptime(value, "%Y/%m").date()
 
-    # Check for integer format with year and month (e.g., 199701)
-    elif re.match(r"^\d{6}$", value):
-        return dt.datetime.strptime(value, "%Y%m").date()
-
-    # Check for integer format with year, month, and day (e.g., 19970101)
+    # Check for integer format with year, month, and day
+    # e.g. 19790101
     elif re.match(r"^\d{8}$", value):
         return dt.datetime.strptime(value, "%Y%m%d").date()
 
-    # Check for string formats with various separators (e.g., 1997-01, 1997_01)
-    elif re.match(r"^\d{4}[-_/]\d{2}$", value):
-        return dt.datetime.strptime(value, "%Y-%m").date() if '-' in value else dt.datetime.strptime(value, "%Y_%m").date() if '_' in value else dt.datetime.strptime(value, "%Y/%m").date()
+    # Check for integer format with year and month
+    # e.g. 197901
+    elif re.match(r"^\d{6}$", value):
+        return dt.datetime.strptime(value, "%Y%m").date()
 
-    # Check for string formats with year, month, and day with various separators (e.g., 1997-01-01, 1997_01_01)
-    elif re.match(r"^\d{4}[-_/]\d{2}[-_/]\d{2}$", value):
-        return dt.datetime.strptime(value, "%Y-%m-%d").date() if '-' in value else dt.datetime.strptime(value, "%Y_%m_%d").date() if '_' in value else dt.datetime.strptime(value, "%Y/%m/%d").date()
+    # Check for fractional year
+    # e.g. 1997.0145
+    elif re.match(r"^\d{4}\.\d+$", value):
+        year = int(value[:4])
+        fractional_year = float(value)
+        start_of_year = dt.datetime(year, 1, 1)
+
+        year_fraction = fractional_year - year
+        days_in_year = (
+            366 if (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+            else 365
+        )
+
+        result_date = start_of_year + dt.timedelta(
+            days=year_fraction * days_in_year
+        )
+
+        return result_date.date()
+
+    # Check for integer year
+    # e.g. 1979
+    elif re.match(r"^\d{4}$", value):
+        return dt.date(int(value), 1, 1)
 
     # If none of the formats match, raise an error
     else:
@@ -3420,7 +3536,121 @@ def predict_alt_unit(alt):
         return 'hPa'
 
 
-def load_netCDF(filename, ini):
+def load_netCDF_folder(folder, ini):
+    files = sorted(
+        os.path.join(folder, f)
+        for f in os.listdir(folder)
+        if f.lower().endswith(('.nc', '.nc4'))
+    )
+
+    if not files:
+        raise ValueError(f'No NetCDF files found in folder: {folder}')
+
+    print(f'Loading {len(files)} NetCDF files from: {folder}')
+
+    datasets = []
+
+    for filename in files:
+        print(f'  Loading: {os.path.basename(filename)}')
+
+        data = load_netCDF_file(filename, ini)
+
+        if data is None:
+            raise ValueError(
+                f'Could not load NetCDF file: {filename}'
+            )
+
+        datasets.append(data)
+
+    # ------------------------------------------------------------------
+    # Check that all files have the same structure
+    # ------------------------------------------------------------------
+
+    reference = datasets[0]
+
+    for data in datasets[1:]:
+
+        if data.o3.shape[1:] != reference.o3.shape[1:]:
+            raise ValueError(
+                f'Dimension mismatch between NetCDF files:\n'
+                f'{reference.name}: {reference.o3.shape[1:]}\n'
+                f'{data.name}: {data.o3.shape[1:]}'
+            )
+
+        if reference.dim_array != data.dim_array:
+            raise ValueError(
+                f'Dimension names differ between NetCDF files:\n'
+                f'{reference.name}: {reference.dim_array}\n'
+                f'{data.name}: {data.dim_array}'
+            )
+
+        for dim_name in reference.dim_array[1:]:
+
+            if not np.array_equal(
+                getattr(reference, dim_name),
+                getattr(data, dim_name)
+            ):
+                raise ValueError(
+                    f'Coordinate "{dim_name}" differs between '
+                    f'{reference.name} and {data.name}.'
+                )
+
+    # ------------------------------------------------------------------
+    # Merge along time
+    # ------------------------------------------------------------------
+
+    reference.o3 = np.ma.concatenate(
+        [data.o3 for data in datasets],
+        axis=0
+    )
+
+    reference.time = np.concatenate(
+        [data.time for data in datasets]
+    )
+
+    # ------------------------------------------------------------------
+    # Sort by time
+    # ------------------------------------------------------------------
+
+    sort_index = np.argsort(reference.time)
+
+    reference.time = reference.time[sort_index]
+    reference.o3 = reference.o3[sort_index]
+
+    # ------------------------------------------------------------------
+    # Check for duplicate time values
+    # ------------------------------------------------------------------
+
+    unique_time, unique_index, counts = np.unique(
+        reference.time,
+        return_index=True,
+        return_counts=True
+    )
+
+    if np.any(counts > 1):
+        duplicate_times = unique_time[counts > 1]
+
+        raise ValueError(
+            'Duplicate time values found while merging NetCDF files:\n'
+            + '\n'.join(str(t) for t in duplicate_times)
+        )
+
+    # Keep original Dataset metadata
+    reference.name = os.path.basename(
+        os.path.normpath(folder)
+    )
+
+    reference.o3_og = reference.o3.copy()
+
+    print(
+        f'Merged dataset "{reference.name}" '
+        f'contains {len(reference.time)} time steps.'
+    )
+
+    return reference
+
+
+def load_netCDF_file(filename, ini):
     try:
         dataset = nc.Dataset(filename, 'r')
 
@@ -3469,6 +3699,14 @@ def load_netCDF(filename, ini):
     except Exception as e:
         print('Error loading NetCDF file:', e)
         return None
+
+
+def load_netCDF(filename, ini):
+
+    if os.path.isdir(filename):
+        return load_netCDF_folder(filename, ini)
+
+    return load_netCDF_file(filename, ini)
 
 
 def save_netCDF(current_data, trends, signi, diagnostic, ini):
@@ -4322,4 +4560,4 @@ def iup_ui(ui=False, config='config.ini'):
 
 
 if __name__ == "__main__":
-    iup_ui()
+    iup_ui(ui=True)

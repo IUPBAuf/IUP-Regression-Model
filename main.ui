@@ -108,6 +108,9 @@
              <layout class="QHBoxLayout" name="horizontalLayout_9">
               <item>
                <widget class="QComboBox" name="preset_combo">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
                 <property name="toolTip">
                  <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Presets easily change the way a trend is computed by importing the settings from different configuration files.&lt;br/&gt;This only changes the settings and does not import any data or proxies that were included in the original configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
                 </property>
@@ -1499,6 +1502,7 @@
     </property>
     <addaction name="separator"/>
     <addaction name="menu_load_data"/>
+    <addaction name="menu_load_folder"/>
     <addaction name="menu_load_proxy"/>
     <addaction name="separator"/>
     <addaction name="menu_save"/>
@@ -1584,6 +1588,11 @@
   <action name="menu_save_plot">
    <property name="text">
     <string>Save Current Plot</string>
+   </property>
+  </action>
+  <action name="menu_load_folder">
+   <property name="text">
+    <string>Load Data Folder</string>
    </property>
   </action>
  </widget>

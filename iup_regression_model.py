@@ -3908,6 +3908,7 @@ def get_X_1(nanmask, ini, X_1_string, data):
         if i == None:   # If the column is a gap column, skip
             val = 0
             method = int(ini['trend_method'])
+            seas_comp = int(ini.get('trend_seasonal_component', ini.get('default_seasonal_component', 2)))
             infl_count += 1
 
         elif i == 1:  # Rules for intercept column

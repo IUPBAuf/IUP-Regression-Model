@@ -2,7 +2,7 @@
 
 Graphical tool for estimating long-term trends in monthly atmospheric datasets with multiple linear regression (MLR).
 
-The model was developed at the Institute of Environmental Physics (IUP), University of Bremen, primarily for vertically and/or geographically resolved ozone time series. It can combine a trend and intercept with standard atmospheric proxies, user-supplied proxies, seasonal terms, optional change points, anomaly calculations, and data-coverage filters. The regression is evaluated independently for every non-time grid cell.
+The model was developed at the Institute of Environmental Physics (IUP), University of Bremen, primarily for vertically and/or geographically resolved ozone time series. It can combine a trend and intercept with standard atmospheric proxies, user-supplied proxies, seasonal terms, optional inflection points, anomaly calculations, and data-coverage filters. The regression is evaluated independently for every non-time grid cell.
 
 > **Development status:** alpha 1.30 (`alpha1.3` branch). This is research software under active development. Validate configurations and results before scientific use. See [Known limitations](#known-limitations).
 
@@ -13,7 +13,7 @@ The model was developed at the Institute of Environmental Physics (IUP), Univers
 - [Using the graphical interface](#using-the-graphical-interface)
 - [Input data](#input-data)
 - [Configuration reference](#configuration-reference)
-- [Regression terms and change points](#regression-terms-and-change-points)
+- [Regression terms and inflection points](#regression-terms-and-inflection-points)
 - [Data filtering](#data-filtering)
 - [Output](#output)
 - [Python API](#python-api)
@@ -298,7 +298,7 @@ Without averaging, anomalies are calculated separately for each calendar month. 
 | `inflection_point` | One or more ordered, comma-separated `YYYY-MM` dates. |
 | `inflection_method` | Comma-separated method for each resulting segment: `ind`, `pwl`, or `gap`. |
 
-With two change points there are three segments, so three methods are required. If fewer methods are supplied, the code repeats the supplied list to fill the segments.
+With two inflection points there are three segments, so three methods are required. If fewer methods are supplied, the code repeats the supplied list to fill the segments.
 
 - `ind`: fit an independent intercept and trend for the segment;
 - `pwl`: fit a continuous piecewise-linear trend; and
@@ -334,7 +334,7 @@ Filter flags used by the Observations plot are:
 | 3 | insufficient internal density |
 | 4 | excessive consecutive gap |
 
-## Regression terms and change points
+## Regression terms and inflection points
 
 The matrix begins with intercept and trend terms and then adds each enabled proxy. Standard proxies are normalised over their usable period; AOD uses a separate zero-aware min/max treatment. Multidimensional proxies are matched to a dependent-data dimension through their semantic tag. If the requested coordinate is not present, the code linearly interpolates between the two closest proxy coordinates.
 
